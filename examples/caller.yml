@@ -1,0 +1,41 @@
+# Copy to .github/workflows/security-review.yml in any repo you want reviewed.
+# Needs repo secrets ANTHROPIC_API_KEY / OPENAI_API_KEY / GEMINI_API_KEY (only for the
+# providers you use) and Settings → Actions → General →
+# "Allow GitHub Actions to create and approve pull requests".
+
+name: Security review
+
+on:
+  workflow_dispatch:
+    inputs:
+      anthropic:
+        description: "Anthropic (Claude Code)"
+        type: boolean
+        default: true
+      openai:
+        description: "OpenAI (Codex)"
+        type: boolean
+        default: true
+      gemini:
+        description: "Google (Gemini CLI)"
+        type: boolean
+        default: true
+      draft:
+        description: "Open PRs as drafts"
+        type: boolean
+        default: true
+
+jobs:
+  security-review:
+    permissions:
+      contents: write
+      pull-requests: write
+    uses: shaztechio/multi-llm-security-review/.github/workflows/security-review.yml@main
+    with:
+      anthropic: ${{ inputs.anthropic }}
+      openai: ${{ inputs.openai }}
+      gemini: ${{ inputs.gemini }}
+      draft: ${{ inputs.draft }}
+      # claude-model: claude-sonnet-4-6
+      # tool-ref: main   # keep in step with the @ref on the uses: line
+    secrets: inherit

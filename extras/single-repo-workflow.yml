@@ -1,0 +1,121 @@
+# Multi-agent security review: Claude Code, Codex and Gemini CLI each review the repo
+# in parallel and open their own draft PR with fixes + a findings report.
+# On demand only: Actions tab → Security review → Run workflow, then tick the providers.
+#
+# Setup:
+#   1. Put security-review.mjs at .github/scripts/security-review.mjs
+#   2. Add repo secrets: ANTHROPIC_API_KEY, OPENAI_API_KEY, GEMINI_API_KEY
+#      (an agent whose secret is missing fails its own job; the others still run)
+#   3. Settings → Actions → General → Workflow permissions:
+#      enable "Allow GitHub Actions to create and approve pull requests"
+
+name: Security review
+
+on:
+  workflow_dispatch:
+    inputs:
+      anthropic:
+        description: "Anthropic (Claude Code)"
+        type: boolean
+        default: true
+      openai:
+        description: "OpenAI (Codex)"
+        type: boolean
+        default: true
+      gemini:
+        description: "Google (Gemini CLI)"
+        type: boolean
+        default: true
+      draft:
+        description: "Open PRs as drafts"
+        type: boolean
+        default: true
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: security-review-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    outputs:
+      agents: ${{ steps.pick.outputs.agents }}
+    steps:
+      - id: pick
+        env:
+          ANTHROPIC: ${{ inputs.anthropic }}
+          OPENAI: ${{ inputs.openai }}
+          GEMINI: ${{ inputs.gemini }}
+        run: |
+          agents=()
+          [[ "$ANTHROPIC" == true ]] && agents+=(claude)
+          [[ "$OPENAI" == true ]] && agents+=(codex)
+          [[ "$GEMINI" == true ]] && agents+=(gemini)
+          if [[ ${#agents[@]} -eq 0 ]]; then
+            echo "::error::Select at least one of Anthropic, OpenAI or Gemini."
+            exit 1
+          fi
+          echo "agents=$(printf '%s\n' "${agents[@]}" | jq -Rsc 'split("\n") | map(select(length > 0))')" >> "$GITHUB_OUTPUT"
+
+  review:
+    needs: plan
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    strategy:
+      fail-fast: false
+      matrix:
+        agent: ${{ fromJSON(needs.plan.outputs.agents) }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install ${{ matrix.agent }} CLI
+        run: |
+          case "${{ matrix.agent }}" in
+            claude) npm install -g @anthropic-ai/claude-code ;;
+            codex)  npm install -g @openai/codex ;;
+            gemini) npm install -g @google/gemini-cli ;;
+          esac
+
+      - name: Configure git identity
+        run: |
+          git config --global user.name  "github-actions[bot]"
+          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Run security review
+        env:
+          AGENTS: ${{ matrix.agent }}
+          BASE_BRANCH: ${{ github.event.repository.default_branch }}
+          DRAFT: ${{ inputs.draft && '1' || '0' }}
+          AGENT_TIMEOUT_MIN: "60"
+          TMPDIR: ${{ runner.temp }}
+          GH_TOKEN: ${{ github.token }}
+          ANTHROPIC_API_KEY: ${{ matrix.agent == 'claude' && secrets.ANTHROPIC_API_KEY || '' }}
+          OPENAI_API_KEY:    ${{ matrix.agent == 'codex'  && secrets.OPENAI_API_KEY    || '' }}
+          GEMINI_API_KEY:    ${{ matrix.agent == 'gemini' && secrets.GEMINI_API_KEY    || '' }}
+          # Optional model overrides via repo variables (Settings → Variables)
+          CLAUDE_MODEL: ${{ vars.CLAUDE_MODEL }}
+          CODEX_MODEL:  ${{ vars.CODEX_MODEL }}
+          GEMINI_MODEL: ${{ vars.GEMINI_MODEL }}
+        shell: bash # implies -o pipefail, so a failing script fails the job despite tee
+        run: node .github/scripts/security-review.mjs . 2>&1 | tee "$RUNNER_TEMP/review-output.txt"
+
+      - name: Upload agent log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: security-review-${{ matrix.agent }}-log
+          path: |
+            ${{ runner.temp }}/review-output.txt
+            ${{ runner.temp }}/secreview-*/*.log
+          if-no-files-found: ignore
+          retention-days: 14

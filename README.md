@@ -1,19 +1,101 @@
 # multi-llm-security-review
 
-Runs Claude Code, Codex and Gemini CLI against a repo in parallel. Each agent reviews the
-code for security issues, fixes what it is confident about, and opens its own PR with the
-fixes and a findings report.
+A reusable GitHub Actions workflow that runs **Claude Code**, **Codex** and **Gemini CLI** against a
+repo. Each agent reviews the whole codebase for security issues, fixes what it is confident about, and
+opens its own PR with the fixes and a findings report. One PR per agent; there is no cross-model merge.
 
-- `scripts/security-review.mjs`: the tool. Run it locally: `node scripts/security-review.mjs path/to/repo`
-- `.github/workflows/security-review.yml`: reusable workflow (`workflow_call`)
-- `examples/caller.yml`: copy into any repo to get a "Run workflow" button with provider checkboxes
+The same script also runs locally, so CI and local runs behave identically.
 
-Keep this repo public (it contains no secrets), or callers must be granted access to it
-under Settings → Actions → General → Access.
+| Path | What it is |
+|---|---|
+| `.github/workflows/security-review.yml` | The reusable workflow (`workflow_call`). One matrix job per selected provider. |
+| `examples/caller.yml` | Copy into a repo to get a "Run workflow" button with provider checkboxes. |
+| `scripts/security-review.mjs` | The tool. Node 18+, no dependencies. The workflow fetches it from this repo. |
+| `.github/workflows/no-secrets.yml` | Guard that fails if this repo can see any provider API key. |
+| `extras/` | Earlier bash script and single-repo workflow. Superseded, kept for reference only. |
+
+## Use it from another repo
+
+1. Copy [`examples/caller.yml`](examples/caller.yml) to `.github/workflows/security-review.yml` in the repo
+   you want reviewed.
+2. In that repo, add a secret for each provider you'll use (see [API keys](#api-keys)).
+3. In that repo, enable Settings → Actions → General → **Allow GitHub Actions to create and approve pull requests**.
+4. Actions tab → **Security review** → **Run workflow**, tick the providers, run.
+
+Each selected agent opens a PR on a `security-review/<agent>-<YYYYMMDD-HHMM>` branch. Its report is
+committed under `security-reviews/` and included in the PR body, truncated to 60k characters.
+
+The workflow runs on demand only (`workflow_dispatch`). The caller grants
+`contents: write` and `pull-requests: write`.
+
+### Inputs
+
+| Input | Default | Notes |
+|---|---|---|
+| `anthropic` / `openai` / `gemini` | `true` | Which agents to run. |
+| `draft` | `true` | Open PRs as drafts. |
+| `base-branch` | repo default | Branch to review and target. |
+| `claude-model` / `codex-model` / `gemini-model` | CLI default | Model override per agent. |
+| `agent-timeout-minutes` | `60` | Kills an agent that runs longer. Keep under 105 (the job limit is 120). |
+| `tool-repository` / `tool-ref` | this repo / `main` | Where the script is fetched from. Keep `tool-ref` in step with the `@ref` on the `uses:` line. |
+
+To pin a release, set both `uses: shaztechio/multi-llm-security-review/.github/workflows/security-review.yml@v1`
+**and** `tool-ref: v1`.
 
 ## API keys
 
 Set `ANTHROPIC_API_KEY`, `OPENAI_API_KEY` and/or `GEMINI_API_KEY` as secrets **in each calling repo**
-(only for the providers you tick). Never add them to this repo: `.github/workflows/no-secrets.yml` fails if
-this repo can see any of them (including org secrets shared with it), and the reusable workflow refuses to run
-from this repo. A run also fails if a ticked provider has no key.
+(only for the providers you tick). They reach the workflow through `secrets: inherit`.
+
+Never add them to this repo:
+
+- `no-secrets.yml` fails if this repo can see any of them, including org secrets shared with it. It runs on
+  every push and PR, and weekly. If you use org secrets, share them only with selected repos and leave
+  this one out.
+- The reusable workflow refuses to run from this repo.
+- A run fails if a ticked provider has no key.
+
+Keep this repo public (it contains no secrets), or grant callers access under
+Settings → Actions → General → Access.
+
+## How each agent runs
+
+Each agent works in its own git worktree off `origin/<base>`, writes `.security-review.md`, and the
+script commits, pushes and runs `gh pr create`. Agents never commit or push themselves.
+
+| Agent | Command | Permissions |
+|---|---|---|
+| Claude Code | `claude -p … --permission-mode acceptEdits --allowedTools Read,Edit,Write,Glob,Grep` | Edits only, no shell (so it can't run tests). |
+| Codex | `codex exec --sandbox workspace-write …` | Workspace-write sandbox. |
+| Gemini CLI | `gemini -p … --approval-mode auto_edit --skip-trust` | Auto-approves edits. |
+
+Gemini CLI stands in for Google Antigravity, which is a desktop app and can't be scripted.
+
+## Run locally
+
+Requires Node 18+, git, an authenticated `gh`, and the CLIs you want to run
+(`npm i -g @anthropic-ai/claude-code @openai/codex @google/gemini-cli`). Works on Windows, macOS and Linux.
+
+```bash
+AGENTS=claude ANTHROPIC_API_KEY=... node scripts/security-review.mjs path/to/repo
+```
+
+| Env var | Default | Notes |
+|---|---|---|
+| `AGENTS` | `claude codex gemini` | Space-separated. Agents without a CLI or key are skipped. |
+| `BASE_BRANCH` | origin's default branch | |
+| `CLAUDE_MODEL` / `CODEX_MODEL` / `GEMINI_MODEL` | CLI default | |
+| `DRAFT` | `1` | `0` for ready-for-review PRs. |
+| `REPORT_DIR` | `security-reviews` | Where the report is committed. |
+| `AGENT_TIMEOUT_MIN` | `60` | |
+
+Agent logs are kept in a `secreview-*` temp directory, printed at the end. In CI they're uploaded as
+the `security-review-<agent>-log` artifact.
+
+## Caveats
+
+- **Public repos:** a PR listing unfixed vulnerabilities is public as soon as it opens. Use this on
+  private repos.
+- PRs opened with `GITHUB_TOKEN` don't trigger other workflows (e.g. tests). Use a GitHub App token or a
+  PAT if you need that.
+- Cost scales with repo size × number of agents. There is no budget cap; only the per-agent timeout.

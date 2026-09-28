@@ -16,11 +16,13 @@
 //   REPORT_DIR=security-reviews    where the findings file is committed in the PR
 //   DRAFT=1                        open PRs as drafts (0 to disable)
 //   AGENT_TIMEOUT_MIN=60           kill an agent that runs longer than this
+//   SARIF_DIR=<run dir>            where each agent's findings are written as <agent>.sarif
+//                                  (never committed; the workflow uploads them to code scanning)
 
 import { spawn, execFileSync } from "node:child_process";
-import { createWriteStream, existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
+import { createWriteStream, existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, extname, join, resolve } from "node:path";
+import { dirname, extname, isAbsolute, join, relative, resolve } from "node:path";
 
 const env = process.env;
 const AGENTS = (env.AGENTS ?? "claude codex gemini").split(/\s+/).filter(Boolean);
@@ -28,6 +30,7 @@ const REPORT_DIR = env.REPORT_DIR ?? "security-reviews";
 const DRAFT = (env.DRAFT ?? "1") === "1";
 const TIMEOUT_MS = Number(env.AGENT_TIMEOUT_MIN ?? 60) * 60_000;
 const REPORT_FILE = ".security-review.md"; // agents write here, inside their worktree
+const SARIF_FILE = ".security-review.sarif";
 
 const now = new Date();
 const pad = (n) => String(n).padStart(2, "0");
@@ -44,6 +47,15 @@ const PROMPT = `You are performing a security review of this repository.
    - a one-paragraph summary
    - a table: ID | Severity (Critical/High/Medium/Low) | File:line | Issue | Status (Fixed / Not fixed)
    - for each finding: description, impact, and either what you changed or why you left it
+4. Also write every finding (fixed or not) to ./${SARIF_FILE} as SARIF 2.1.0 JSON:
+   - one run; tool.driver.name "security-review"; tool.driver.rules with one rule per issue type:
+     id, shortDescription.text, and properties { "tags": ["security", "<CWE id, e.g. CWE-89>"],
+     "security-severity": "<9.0 critical, 7.0 high, 5.0 medium, 3.0 low>" }
+   - one result per finding: ruleId, level ("error" for critical/high, "warning" for medium,
+     "note" for low), message.text (the issue, plus "Fixed in this review's PR." if you fixed it),
+     and one location: physicalLocation.artifactLocation.uri (path relative to the repo root,
+     forward slashes) and region.startLine (and endLine if known)
+   - if there are no findings, write a run with an empty results array
 Do not run git commit, git push, or create branches or pull requests; that is handled for you.`;
 
 // Each agent: binary, required key, and argv (no shell, so the prompt is never shell-parsed).
@@ -123,6 +135,62 @@ function runCli(cmd, args, { cwd, logPath, extraEnv = {} }) {
   });
 }
 
+// ---- SARIF -----------------------------------------------------------------
+
+// Move the agent's SARIF out of the worktree and tidy it into what code scanning accepts:
+// repo-relative URIs, a startLine on every location, and results without a location dropped.
+function exportSarif(agent, wt, ctx) {
+  const src = join(wt, SARIF_FILE);
+  if (!existsSync(src)) { log(agent, "no SARIF written"); return; }
+  let sarif;
+  try {
+    sarif = JSON.parse(readFileSync(src, "utf8"));
+  } catch (err) {
+    log(agent, `SARIF is not valid JSON, skipping it (${err.message})`);
+    return;
+  } finally {
+    rmSync(src);
+  }
+
+  const toRepoUri = (uri) => {
+    let u = String(uri).replace(/^file:\/\/\/?/, "");
+    try { u = decodeURIComponent(u); } catch { /* keep as is */ }
+    if (isAbsolute(u)) u = relative(wt, u);
+    return u.replace(/\\/g, "/").replace(/^\.\//, "");
+  };
+  let kept = 0, dropped = 0;
+  sarif.version = "2.1.0";
+  sarif.$schema ??= "https://json.schemastore.org/sarif-2.1.0.json";
+  sarif.runs = (Array.isArray(sarif.runs) ? sarif.runs : []).map((run) => {
+    run.tool ??= {};
+    run.tool.driver ??= {};
+    run.tool.driver.name ||= "security-review";
+    run.tool.driver.fullName = `security-review (${agent})`;
+    run.results = (run.results ?? []).filter((r) => {
+      const locs = (r.locations ?? []).filter((l) => l?.physicalLocation?.artifactLocation?.uri);
+      if (!r.message?.text || locs.length === 0) { dropped++; return false; }
+      for (const l of locs) {
+        const pl = l.physicalLocation;
+        pl.artifactLocation.uri = toRepoUri(pl.artifactLocation.uri);
+        delete pl.artifactLocation.uriBaseId;
+        pl.region ??= {};
+        pl.region.startLine = Math.max(1, Number(pl.region.startLine) || 1);
+      }
+      r.locations = locs;
+      r.ruleId ||= "security-finding";
+      kept++;
+      return true;
+    });
+    return run;
+  });
+
+  const dir = env.SARIF_DIR || ctx.runDir;
+  mkdirSync(dir, { recursive: true });
+  const dest = join(dir, `${agent}.sarif`);
+  writeFileSync(dest, JSON.stringify(sarif, null, 2));
+  log(agent, `SARIF: ${kept} finding(s)${dropped ? `, ${dropped} dropped (no message or location)` : ""} -> ${dest}`);
+}
+
 // ---- main flow -------------------------------------------------------------
 
 async function runAgent(agent, ctx) {
@@ -134,6 +202,8 @@ async function runAgent(agent, ctx) {
   log(agent, `reviewing (log: ${logPath})`);
   const code = await runCli(ctx.bins[agent].cmd, [...ctx.bins[agent].prefix, ...def.args()], { cwd: wt, logPath, extraEnv: def.extraEnv?.() });
   if (code !== 0) log(agent, `agent exited with code ${code}; see ${logPath}`);
+
+  exportSarif(agent, wt, ctx); // before git add -A, so the SARIF is never committed
 
   const report = join(wt, REPORT_FILE);
   if (!existsSync(report) || statSync(report).size === 0) {

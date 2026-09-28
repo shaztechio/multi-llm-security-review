@@ -24,18 +24,25 @@ on:
         description: "Open PRs as drafts"
         type: boolean
         default: true
+      upload-sarif:
+        description: "Upload findings to code scanning (Security tab)"
+        type: boolean
+        default: true
 
 jobs:
   security-review:
     permissions:
       contents: write
       pull-requests: write
+      security-events: write # code scanning upload
+      actions: read          # needed by the SARIF upload on private repos
     uses: shaztechio/multi-llm-security-review/.github/workflows/security-review.yml@main
     with:
       anthropic: ${{ inputs.anthropic }}
       openai: ${{ inputs.openai }}
       gemini: ${{ inputs.gemini }}
       draft: ${{ inputs.draft }}
+      upload-sarif: ${{ inputs.upload-sarif }}
       # claude-model: claude-sonnet-4-6
       # tool-ref: main   # keep in step with the @ref on the uses: line
     secrets: inherit

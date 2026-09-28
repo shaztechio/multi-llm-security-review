@@ -3,6 +3,7 @@
 A reusable GitHub Actions workflow that runs **Claude Code**, **Codex** and **Gemini CLI** against a
 repo. Each agent reviews the whole codebase for security issues, fixes what it is confident about, and
 opens its own PR with the fixes and a findings report. One PR per agent; there is no cross-model merge.
+Findings are also uploaded as SARIF to the repo's code scanning alerts, which only collaborators can see.
 
 The same script also runs locally, so CI and local runs behave identically.
 
@@ -23,10 +24,12 @@ The same script also runs locally, so CI and local runs behave identically.
 4. Actions tab → **Security review** → **Run workflow**, tick the providers, run.
 
 Each selected agent opens a PR on a `security-review/<agent>-<YYYYMMDD-HHMM>` branch. Its report is
-committed under `security-reviews/` and included in the PR body, truncated to 60k characters.
+committed under `security-reviews/` and included in the PR body, truncated to 60k characters. Its
+findings are also uploaded to code scanning (see [Code scanning](#code-scanning)).
 
-The workflow runs on demand only (`workflow_dispatch`). The caller grants
-`contents: write` and `pull-requests: write`.
+The workflow runs on demand only (`workflow_dispatch`). The caller grants `contents: write` and
+`pull-requests: write`, plus `security-events: write` and `actions: read` for the code scanning upload.
+If you copied an older `caller.yml`, add those two permissions and the `upload-sarif` input.
 
 ### Inputs
 
@@ -34,6 +37,7 @@ The workflow runs on demand only (`workflow_dispatch`). The caller grants
 |---|---|---|
 | `anthropic` / `openai` / `gemini` | `true` | Which agents to run. |
 | `draft` | `true` | Open PRs as drafts. |
+| `upload-sarif` | `true` | Upload findings to code scanning. Untick on private repos without GitHub Code Security. |
 | `base-branch` | repo default | Branch to review and target. |
 | `claude-model` / `codex-model` / `gemini-model` | CLI default | Model override per agent. |
 | `agent-timeout-minutes` | `60` | Kills an agent that runs longer. Keep under 105 (the job limit is 120). |
@@ -58,10 +62,25 @@ Never add them to this repo:
 Keep this repo public (it contains no secrets), or grant callers access under
 Settings → Actions → General → Access.
 
+## Code scanning
+
+Each agent also writes its findings (fixed or not) as SARIF. The workflow uploads them to the calling
+repo's **Security → Code scanning** page, one category per agent (`security-review-claude` and so on),
+attached to the reviewed branch and commit.
+
+- Alerts are visible only to people with write or security access, not the public.
+- Free on public repos. Private repos need a GitHub Code Security license; without one, untick
+  `upload-sarif` or the upload step fails.
+- The SARIF is never committed to the PR.
+- Alerts close when a later run of the same agent no longer reports them, so run again after merging fixes.
+- Before upload, the script tidies what the agent wrote: paths made repo-relative, a line number on
+  every location, and findings without a file location dropped.
+
 ## How each agent runs
 
-Each agent works in its own git worktree off `origin/<base>`, writes `.security-review.md`, and the
-script commits, pushes and runs `gh pr create`. Agents never commit or push themselves.
+Each agent works in its own git worktree off `origin/<base>` and writes `.security-review.md` and
+`.security-review.sarif`. The script moves the SARIF out of the worktree, then commits the fixes and the
+report, pushes, and runs `gh pr create`. Agents never commit or push themselves.
 
 | Agent | Command | Permissions |
 |---|---|---|
@@ -88,14 +107,21 @@ AGENTS=claude ANTHROPIC_API_KEY=... node scripts/security-review.mjs path/to/rep
 | `DRAFT` | `1` | `0` for ready-for-review PRs. |
 | `REPORT_DIR` | `security-reviews` | Where the report is committed. |
 | `AGENT_TIMEOUT_MIN` | `60` | |
+| `SARIF_DIR` | the run's temp dir | Where `<agent>.sarif` is written. |
 
 Agent logs are kept in a `secreview-*` temp directory, printed at the end. In CI they're uploaded as
 the `security-review-<agent>-log` artifact.
 
+Local runs write the SARIF but don't upload it. To upload one by hand (needs `security-events` access):
+
+```bash
+gh api repos/OWNER/REPO/code-scanning/sarifs -f commit_sha=$(git rev-parse origin/main) -f ref=refs/heads/main -f sarif=$(gzip -c claude.sarif | base64 -w0)
+```
+
 ## Caveats
 
-- **Public repos:** a PR listing unfixed vulnerabilities is public as soon as it opens. Use this on
-  private repos.
+- **Public repos:** a PR listing unfixed vulnerabilities is public as soon as it opens, and so are the
+  agent log artifacts. Code scanning alerts stay private, but the PRs don't; use this on private repos.
 - PRs opened with `GITHUB_TOKEN` don't trigger other workflows (e.g. tests). Use a GitHub App token or a
   PAT if you need that.
 - Cost scales with repo size × number of agents. There is no budget cap; only the per-agent timeout.

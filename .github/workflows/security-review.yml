@@ -6,6 +6,7 @@
 #   uses: shaztechio/multi-llm-security-review/.github/workflows/security-review.yml@main
 #
 # The caller must grant:  permissions: { contents: write, pull-requests: write }
+# plus { security-events: write, actions: read } when upload-sarif is on (the default).
 # and enable Settings → Actions → General → "Allow GitHub Actions to create and approve pull requests".
 #
 # API keys (ANTHROPIC_API_KEY / OPENAI_API_KEY / GEMINI_API_KEY) are secrets of the CALLING repo only.
@@ -30,6 +31,10 @@ on:
         default: true
       draft:
         description: "Open PRs as drafts"
+        type: boolean
+        default: true
+      upload-sarif:
+        description: "Upload findings to code scanning (Security tab). Private repos need GitHub Code Security."
         type: boolean
         default: true
       base-branch:
@@ -159,8 +164,35 @@ jobs:
           CLAUDE_MODEL: ${{ inputs.claude-model }}
           CODEX_MODEL:  ${{ inputs.codex-model }}
           GEMINI_MODEL: ${{ inputs.gemini-model }}
+          SARIF_DIR: ${{ runner.temp }}/sarif
         shell: bash # implies -o pipefail, so a failing script fails the job despite tee
         run: node .security-review-tool/scripts/security-review.mjs . 2>&1 | tee "$RUNNER_TEMP/review-output.txt"
+
+      # Findings are analysed against origin/<base>, so attach the alerts to that branch and commit.
+      - name: Find SARIF
+        id: sarif
+        if: ${{ !cancelled() && inputs.upload-sarif }}
+        env:
+          BASE_BRANCH: ${{ inputs.base-branch || github.event.repository.default_branch }}
+          SARIF_FILE: ${{ runner.temp }}/sarif/${{ matrix.agent }}.sarif
+        run: |
+          if [[ -s "$SARIF_FILE" ]]; then
+            { echo "found=true"
+              echo "file=$SARIF_FILE"
+              echo "ref=refs/heads/$BASE_BRANCH"
+              echo "sha=$(git rev-parse "origin/$BASE_BRANCH")"; } >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning::${{ matrix.agent }} wrote no SARIF; nothing to upload to code scanning."
+          fi
+
+      - name: Upload findings to code scanning
+        if: ${{ !cancelled() && steps.sarif.outputs.found == 'true' }}
+        uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: ${{ steps.sarif.outputs.file }}
+          category: security-review-${{ matrix.agent }}
+          ref: ${{ steps.sarif.outputs.ref }}
+          sha: ${{ steps.sarif.outputs.sha }}
 
       - name: Upload agent log
         if: always()

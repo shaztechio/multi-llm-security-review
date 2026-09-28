@@ -14,6 +14,7 @@ The same script also runs locally, so CI and local runs behave identically.
 | `scripts/security-review.mjs` | The tool. Node 18+, no dependencies. The workflow fetches it from this repo. |
 | `.github/workflows/no-secrets.yml` | Guard that fails if this repo can see any provider API key. |
 | `extras/` | Earlier bash script and single-repo workflow. Superseded, kept for reference only. |
+| `LICENSE` | Apache License 2.0. |
 
 ## Use it from another repo
 
@@ -125,3 +126,8 @@ gh api repos/OWNER/REPO/code-scanning/sarifs -f commit_sha=$(git rev-parse origi
 - PRs opened with `GITHUB_TOKEN` don't trigger other workflows (e.g. tests). Use a GitHub App token or a
   PAT if you need that.
 - Cost scales with repo size × number of agents. There is no budget cap; only the per-agent timeout.
+
+## License
+
+Copyright 2026 Shazron Abdullah. Licensed under the [Apache License, Version 2.0](LICENSE).
+Each source file carries the standard Apache-2.0 header with `SPDX-License-Identifier: Apache-2.0`.

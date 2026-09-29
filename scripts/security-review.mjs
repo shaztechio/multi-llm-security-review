@@ -218,12 +218,20 @@ function exportSarif(agent, wt, ctx) {
 async function runAgent(agent, ctx) {
   const def = AGENT_DEFS[agent];
   const branch = `security-review/${agent}-${STAMP}`;
-  const wt = join(ctx.runDir, agent);
+  const prepared = ctx.prepared[agent];
+  const wt = prepared ?? join(ctx.runDir, agent);
   const logPath = join(ctx.runDir, `${agent}.log`);
 
-  log(agent, `reviewing (log: ${logPath})`);
-  const code = await runCli(ctx.bins[agent].cmd, [...ctx.bins[agent].prefix, ...def.args()], { cwd: wt, logPath, extraEnv: def.extraEnv?.() });
-  if (code !== 0) log(agent, `agent exited with code ${code}; see ${logPath}`);
+  if (prepared) {
+    // The agent already ran elsewhere (e.g. a GitHub Action) inside this worktree, which
+    // starts detached at origin/<base>; put it on the review branch and carry on from there.
+    log(agent, `using output prepared in ${prepared}`);
+    sh("git", ["checkout", "--quiet", "-b", branch], { cwd: wt });
+  } else {
+    log(agent, `reviewing (log: ${logPath})`);
+    const code = await runCli(ctx.bins[agent].cmd, [...ctx.bins[agent].prefix, ...def.args()], { cwd: wt, logPath, extraEnv: def.extraEnv?.() });
+    if (code !== 0) log(agent, `agent exited with code ${code}; see ${logPath}`);
+  }
 
   exportSarif(agent, wt, ctx); // before git add -A, so the SARIF is never committed
 
@@ -266,6 +274,10 @@ async function runAgent(agent, ctx) {
 }
 
 async function main() {
+  if (process.argv[2] === "--print-prompt") { // for agents run outside this script (the Codex action)
+    process.stdout.write(`${PROMPT}\n`);
+    return;
+  }
   const repo = sh("git", ["rev-parse", "--show-toplevel"], { cwd: resolve(process.argv[2] ?? ".") });
   const git = (...a) => sh("git", a, { cwd: repo });
 
@@ -287,13 +299,17 @@ async function main() {
   }
 
   const runDir = mkdtempSync(join(tmpdir(), `secreview-${STAMP}-`));
-  const ctx = { repo, base, runDir, bins: {} };
+  // PREPARED_<AGENT>_WORKTREE=<path>: that agent already ran in <path> (a detached worktree of
+  // origin/<base>), so skip its CLI, key check and worktree creation and just publish its output.
+  const ctx = { repo, base, runDir, bins: {}, prepared: {} };
 
   // Preflight, then create worktrees one at a time (parallel `git worktree add` races on git's lock).
   const ready = [];
   for (const agent of AGENTS) {
     const def = AGENT_DEFS[agent];
     if (!def) { log(agent, "unknown agent, skipping"); continue; }
+    const preparedDir = env[`PREPARED_${agent.toUpperCase()}_WORKTREE`];
+    if (preparedDir) { ctx.prepared[agent] = resolve(preparedDir); ready.push(agent); continue; }
     let bin;
     try { bin = resolveBin(def.bin); } catch (err) { log(agent, `${err.message}, skipping`); continue; }
     if (!bin) { log(agent, `'${def.bin}' not installed, skipping`); continue; }
@@ -317,7 +333,7 @@ async function main() {
   });
 
   for (const agent of ready) {
-    try { git("worktree", "remove", "--force", join(runDir, agent)); } catch { /* already gone */ }
+    try { git("worktree", "remove", "--force", ctx.prepared[agent] ?? join(runDir, agent)); } catch { /* already gone */ }
   }
   console.log(`Done. Logs kept in ${runDir}`);
 }

@@ -61,7 +61,10 @@ you should not write exploits. This is a security review of the repository in th
 1. Review the whole codebase for security vulnerabilities: injection, authn/authz flaws,
    secrets in code, unsafe deserialization, path traversal, SSRF, insecure crypto,
    dependency risks, insecure defaults, and anything else you find.
-2. Fix every finding you are confident about, with minimal, focused changes that keep
+2. Do NOT modify anything under .github/workflows/ (the token that publishes your changes is not
+   allowed to push workflow files). Report workflow findings in the findings report and SARIF
+   with Status "Not fixed (workflow file)" and describe the exact fix you would make.
+   Fix every other finding you are confident about, with minimal, focused changes that keep
    existing behaviour and tests intact. Do not refactor unrelated code.
 3. Write your findings to ./${REPORT_FILE} in Markdown with:
    - a one-paragraph summary
@@ -244,6 +247,14 @@ async function runAgent(agent, ctx) {
   renameSync(report, join(wt, committedReport));
 
   const git = (...a) => sh("git", a, { cwd: wt });
+  // Workflow files can't be pushed with the workflow's GITHUB_TOKEN; drop any edits to them
+  // (the agent is told not to make them, this keeps the push from failing if it does).
+  const wfDir = ".github/workflows";
+  if (git("status", "--porcelain", "--", wfDir)) {
+    log(agent, `discarding changes under ${wfDir}/ (the token can't push workflow files)`);
+    git("restore", "--source=HEAD", "--staged", "--worktree", "--", wfDir);
+    git("clean", "-fdq", "--", wfDir);
+  }
   git("add", "-A");
   const fixedFiles = git("diff", "--cached", "--name-only")
     .split("\n")

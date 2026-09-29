@@ -62,6 +62,10 @@ on:
       codex-model:
         type: string
         default: ""
+      codex-effort:
+        description: "Codex reasoning effort (low/medium/high/xhigh); blank = Codex default"
+        type: string
+        default: "high"
       gemini-model:
         type: string
         default: ""
@@ -156,9 +160,35 @@ jobs:
         run: |
           case "${{ matrix.agent }}" in
             claude) npm install -g @anthropic-ai/claude-code ;;
-            codex)  npm install -g @openai/codex ;;
+            codex)  ;; # installed by openai/codex-action
             gemini) npm install -g @google/gemini-cli ;;
           esac
+
+      # Codex runs through openai/codex-action instead of the CLI: the action sets up the
+      # runner's user-namespace sandbox and drops sudo before running Codex, and keeps the
+      # API key out of Codex's environment. It reviews a detached worktree of the base branch;
+      # the script then publishes that worktree's output (PREPARED_CODEX_WORKTREE below).
+      - name: Prepare Codex worktree and prompt
+        if: ${{ matrix.agent == 'codex' }}
+        env:
+          BASE_BRANCH: ${{ inputs.base-branch || github.event.repository.default_branch }}
+        run: |
+          git fetch --quiet origin
+          git worktree add --quiet --detach "$RUNNER_TEMP/codex-wt" "origin/$BASE_BRANCH"
+          node .security-review-tool/scripts/security-review.mjs --print-prompt > "$RUNNER_TEMP/codex-prompt.md"
+
+      - name: Run Codex review
+        if: ${{ matrix.agent == 'codex' }}
+        timeout-minutes: ${{ inputs.agent-timeout-minutes }}
+        uses: openai/codex-action@v1
+        with:
+          openai-api-key: ${{ secrets.OPENAI_API_KEY }}
+          prompt-file: ${{ runner.temp }}/codex-prompt.md
+          working-directory: ${{ runner.temp }}/codex-wt
+          permission-profile: ":workspace"
+          model: ${{ inputs.codex-model }}
+          effort: ${{ inputs.codex-effort }}
+          safety-strategy: drop-sudo
 
       - name: Configure git identity
         run: |
@@ -174,12 +204,13 @@ jobs:
           TMPDIR: ${{ runner.temp }}
           GH_TOKEN: ${{ github.token }}
           ANTHROPIC_API_KEY: ${{ matrix.agent == 'claude' && secrets.ANTHROPIC_API_KEY || '' }}
-          OPENAI_API_KEY:    ${{ matrix.agent == 'codex'  && secrets.OPENAI_API_KEY    || '' }}
+          # OPENAI_API_KEY is only given to openai/codex-action above, never to this step
           GEMINI_API_KEY:    ${{ matrix.agent == 'gemini' && secrets.GEMINI_API_KEY    || '' }}
           CLAUDE_MODEL: ${{ inputs.claude-model }}
           CODEX_MODEL:  ${{ inputs.codex-model }}
           GEMINI_MODEL: ${{ inputs.gemini-model }}
           SARIF_DIR: ${{ runner.temp }}/sarif
+          PREPARED_CODEX_WORKTREE: ${{ matrix.agent == 'codex' && format('{0}/codex-wt', runner.temp) || '' }}
         shell: bash # implies -o pipefail, so a failing script fails the job despite tee
         run: node .security-review-tool/scripts/security-review.mjs . 2>&1 | tee "$RUNNER_TEMP/review-output.txt"
 

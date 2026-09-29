@@ -53,6 +53,10 @@ const STAMP = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate()
 
 const PROMPT = `You are performing a security review of this repository.
 
+0. First enumerate the repository with your file-listing and search tools (for example glob for
+   every source, config, workflow and script file), then review it directory by directory, reading
+   the files themselves rather than inferring from names. A tool error is not a reason to stop: retry
+   with different arguments (for example a valid line range) and keep going.
 1. Review the whole codebase for security vulnerabilities: injection, authn/authz flaws,
    secrets in code, unsafe deserialization, path traversal, SSRF, insecure crypto,
    dependency risks, insecure defaults, and anything else you find.
@@ -60,6 +64,9 @@ const PROMPT = `You are performing a security review of this repository.
    existing behaviour and tests intact. Do not refactor unrelated code.
 3. Write your findings to ./${REPORT_FILE} in Markdown with:
    - a one-paragraph summary
+   - a "## Coverage" section listing the directories you reviewed and the notable files you read in
+     each, and any part of the repo you did not or could not review, and why. A report that says
+     nothing was found without this section is treated as a failed review.
    - a table: ID | Severity (Critical/High/Medium/Low) | File:line | Issue | Status (Fixed / Not fixed)
    - for each finding: description, impact, and either what you changed or why you left it
 4. Also write every finding (fixed or not) to ./${SARIF_FILE} as SARIF 2.1.0 JSON:
@@ -226,6 +233,10 @@ async function runAgent(agent, ctx) {
     return;
   }
 
+  if (!/^#{1,6}\s*coverage/im.test(readFileSync(report, "utf8"))) {
+    throw new Error(`report has no Coverage section, so it cannot show what was reviewed; not opening a PR (see ${logPath})`);
+  }
+
   mkdirSync(join(wt, REPORT_DIR), { recursive: true });
   const committedReport = `${REPORT_DIR}/${STAMP}-${agent}.md`;
   renameSync(report, join(wt, committedReport));
@@ -299,7 +310,10 @@ async function main() {
   // Run agents in parallel; one failing never stops the others.
   const results = await Promise.allSettled(ready.map((a) => runAgent(a, ctx)));
   results.forEach((r, i) => {
-    if (r.status === "rejected") log(ready[i], `failed: ${r.reason?.stderr || r.reason?.message || r.reason}`);
+    if (r.status === "rejected") {
+      log(ready[i], `failed: ${r.reason?.stderr || r.reason?.message || r.reason}`);
+      process.exitCode = 1; // a failed agent must not leave a green run
+    }
   });
 
   for (const agent of ready) {

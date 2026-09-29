@@ -14,7 +14,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// security-review.mjs — run Claude Code, Codex and Gemini CLI headlessly against a repo,
+// security-review.mjs — run Claude Code and Codex headlessly against a repo,
 // each in its own git worktree, and open one draft PR per agent with fixes + findings.
 //
 // Usage:  node security-review.mjs [path/to/repo]          (default: current dir)
@@ -22,12 +22,11 @@
 // Requires Node 18+, git, gh (authenticated), and whichever agent CLIs you want to run:
 //   claude  (npm i -g @anthropic-ai/claude-code)   needs ANTHROPIC_API_KEY
 //   codex   (npm i -g @openai/codex)               needs OPENAI_API_KEY
-//   gemini  (npm i -g @google/gemini-cli)          needs GEMINI_API_KEY
 //
 // Optional env:
-//   AGENTS="claude codex gemini"   which agents to run
+//   AGENTS="claude codex"          which agents to run
 //   BASE_BRANCH=main               branch to review (default: origin's default branch)
-//   CLAUDE_MODEL / CODEX_MODEL / GEMINI_MODEL   override each agent's model
+//   CLAUDE_MODEL / CODEX_MODEL   override each agent's model
 //   REPORT_DIR=security-reviews    where the findings file is committed in the PR
 //   DRAFT=1                        open PRs as drafts (0 to disable)
 //   AGENT_TIMEOUT_MIN=60           kill an agent that runs longer than this
@@ -40,7 +39,7 @@ import { tmpdir } from "node:os";
 import { dirname, extname, isAbsolute, join, relative, resolve } from "node:path";
 
 const env = process.env;
-const AGENTS = (env.AGENTS ?? "claude codex gemini").split(/\s+/).filter(Boolean);
+const AGENTS = (env.AGENTS ?? "claude codex").split(/\s+/).filter(Boolean);
 const REPORT_DIR = env.REPORT_DIR ?? "security-reviews";
 const DRAFT = (env.DRAFT ?? "1") === "1";
 const TIMEOUT_MS = Number(env.AGENT_TIMEOUT_MIN ?? 60) * 60_000;
@@ -100,12 +99,6 @@ const AGENT_DEFS = {
     extraEnv: () => ({ CODEX_API_KEY: env.OPENAI_API_KEY }),
     // --full-auto was removed in codex-cli 0.15x; exec is non-interactive, so the sandbox is the only knob.
     args: () => ["exec", "--sandbox", "workspace-write", ...(env.CODEX_MODEL ? ["--model", env.CODEX_MODEL] : []), PROMPT],
-  },
-  gemini: {
-    bin: "gemini",
-    key: "GEMINI_API_KEY",
-    // --skip-trust: each worktree is a fresh temp dir, and untrusted folders downgrade the approval mode.
-    args: () => ["-p", PROMPT, "--approval-mode", "auto_edit", "--skip-trust", ...(env.GEMINI_MODEL ? ["--model", env.GEMINI_MODEL] : [])],
   },
 };
 

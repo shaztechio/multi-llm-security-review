@@ -51,7 +51,9 @@ const now = new Date();
 const pad = (n) => String(n).padStart(2, "0");
 const STAMP = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}`;
 
-const PROMPT = `You are performing a security review of this repository.
+const PROMPT = `You are helping the owner of this repository audit their own code defensively. The goal
+is to find weaknesses and fix them before anyone can exploit them; nothing here is an attack, and
+you should not write exploits. This is a security review of the repository in the current directory.
 
 0. First enumerate the repository with your file-listing and search tools (for example glob for
    every source, config, workflow and script file), then review it directory by directory, reading
@@ -237,8 +239,7 @@ async function runAgent(agent, ctx) {
 
   const report = join(wt, REPORT_FILE);
   if (!existsSync(report) || statSync(report).size === 0) {
-    log(agent, `no findings report written; skipping PR (see ${logPath})`);
-    return;
+    throw new Error(`no findings report written, so the review did not complete; not opening a PR (see ${logPath})`);
   }
 
   if (!/^#{1,6}\s*coverage/im.test(readFileSync(report, "utf8"))) {

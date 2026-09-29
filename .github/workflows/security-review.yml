@@ -61,7 +61,7 @@ on:
       codex-effort:
         description: "Codex reasoning effort (low/medium/high/xhigh); blank = Codex default"
         type: string
-        default: "high"
+        default: "medium"
       agent-timeout-minutes:
         description: "Kill an agent after this many minutes (keep under 105)"
         type: number
@@ -175,6 +175,8 @@ jobs:
           permission-profile: ":workspace"
           model: ${{ inputs.codex-model }}
           effort: ${{ inputs.codex-effort }}
+          # Compact history early so no single request nears the org's tokens-per-minute limit.
+          codex-args: '["-c", "model_auto_compact_token_limit=120000"]'
           safety-strategy: drop-sudo
 
       - name: Configure git identity

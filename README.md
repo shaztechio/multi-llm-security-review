@@ -41,7 +41,7 @@ If you copied an older `caller.yml`, add those two permissions and the `upload-s
 | `upload-sarif` | `true` | Upload findings to code scanning. Untick on private repos without GitHub Code Security. |
 | `base-branch` | repo default | Branch to review and target. |
 | `claude-model` / `codex-model` | CLI default | Model override per agent. |
-| `codex-effort` | `high` | Codex reasoning effort. |
+| `codex-effort` | `medium` | Codex reasoning effort. |
 | `agent-timeout-minutes` | `60` | Kills an agent that runs longer. Keep under 105 (the job limit is 120). |
 | `tool-repository` / `tool-ref` | this repo / `main` | Where the script is fetched from. Keep `tool-ref` in step with the `@ref` on the `uses:` line. |
 

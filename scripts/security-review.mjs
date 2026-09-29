@@ -29,6 +29,7 @@
 //   CLAUDE_MODEL / CODEX_MODEL   override each agent's model
 //   REPORT_DIR=security-reviews    where the findings file is committed in the PR
 //   DRAFT=1                        open PRs as drafts (0 to disable)
+//   PR_TITLE_PREFIX="fix(security)"  Conventional Commit type/scope for PR titles and commits
 //   AGENT_TIMEOUT_MIN=60           kill an agent that runs longer than this
 //   SARIF_DIR=<run dir>            where each agent's findings are written as <agent>.sarif
 //                                  (never committed; the workflow uploads them to code scanning)
@@ -42,6 +43,7 @@ const env = process.env;
 const AGENTS = (env.AGENTS ?? "claude codex").split(/\s+/).filter(Boolean);
 const REPORT_DIR = env.REPORT_DIR ?? "security-reviews";
 const DRAFT = (env.DRAFT ?? "1") === "1";
+const TITLE_PREFIX = env.PR_TITLE_PREFIX ?? "fix(security)"; // repos that squash-merge often require Conventional Commit titles
 const TIMEOUT_MS = Number(env.AGENT_TIMEOUT_MIN ?? 60) * 60_000;
 const REPORT_FILE = ".security-review.md"; // agents write here, inside their worktree
 const SARIF_FILE = ".security-review.sarif";
@@ -259,7 +261,7 @@ async function runAgent(agent, ctx) {
   const fixedFiles = git("diff", "--cached", "--name-only")
     .split("\n")
     .filter((f) => f && !f.startsWith(`${REPORT_DIR}/`)).length;
-  git("commit", "--quiet", "-m", `Security review (${agent}): findings and fixes`);
+  git("commit", "--quiet", "-m", `${TITLE_PREFIX}: apply ${agent} security review findings`);
   git("push", "--quiet", "-u", "origin", branch);
 
   const reportText = readFileSync(join(wt, committedReport), "utf8");
@@ -272,7 +274,7 @@ async function runAgent(agent, ctx) {
   );
 
   const prArgs = ["pr", "create", "--base", ctx.base, "--head", branch,
-    "--title", `Security review (${agent}) — ${STAMP}`, "--body-file", bodyPath];
+    "--title", `${TITLE_PREFIX}: apply ${agent} security review findings`, "--body-file", bodyPath];
   if (DRAFT) prArgs.push("--draft");
   const url = sh("gh", prArgs, { cwd: wt });
   log(agent, `PR opened: ${url}`);

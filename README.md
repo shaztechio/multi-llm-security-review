@@ -106,6 +106,7 @@ AGENTS=claude ANTHROPIC_API_KEY=... node scripts/security-review.mjs path/to/rep
 | `BASE_BRANCH` | origin's default branch | |
 | `CLAUDE_MODEL` / `CODEX_MODEL` | CLI default | |
 | `DRAFT` | `1` | `0` for ready-for-review PRs. |
+| `PR_TITLE_PREFIX` | `fix(security)` | PR titles and commits read `<prefix>: apply <agent> security review findings`, so repos that check Conventional Commit titles accept them. |
 | `REPORT_DIR` | `security-reviews` | Where the report is committed. |
 | `AGENT_TIMEOUT_MIN` | `60` | |
 | `SARIF_DIR` | the run's temp dir | Where `<agent>.sarif` is written. |

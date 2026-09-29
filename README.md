@@ -1,6 +1,6 @@
 # multi-llm-security-review
 
-A reusable GitHub Actions workflow that runs **Claude Code**, **Codex** and **Gemini CLI** against a
+A reusable GitHub Actions workflow that runs **Claude Code** and **Codex** against a
 repo. Each agent reviews the whole codebase for security issues, fixes what it is confident about, and
 opens its own PR with the fixes and a findings report. One PR per agent; there is no cross-model merge.
 Findings are also uploaded as SARIF to the repo's code scanning alerts, which only collaborators can see.
@@ -36,11 +36,12 @@ If you copied an older `caller.yml`, add those two permissions and the `upload-s
 
 | Input | Default | Notes |
 |---|---|---|
-| `anthropic` / `openai` / `gemini` | `true` | Which agents to run. |
+| `anthropic` / `openai` | `true` | Which agents to run. |
 | `draft` | `true` | Open PRs as drafts. |
 | `upload-sarif` | `true` | Upload findings to code scanning. Untick on private repos without GitHub Code Security. |
 | `base-branch` | repo default | Branch to review and target. |
-| `claude-model` / `codex-model` / `gemini-model` | CLI default | Model override per agent. |
+| `claude-model` / `codex-model` | CLI default | Model override per agent. |
+| `codex-effort` | `high` | Codex reasoning effort. |
 | `agent-timeout-minutes` | `60` | Kills an agent that runs longer. Keep under 105 (the job limit is 120). |
 | `tool-repository` / `tool-ref` | this repo / `main` | Where the script is fetched from. Keep `tool-ref` in step with the `@ref` on the `uses:` line. |
 
@@ -49,7 +50,7 @@ To pin a release, set both `uses: shaztechio/multi-llm-security-review/.github/w
 
 ## API keys
 
-Set `ANTHROPIC_API_KEY`, `OPENAI_API_KEY` and/or `GEMINI_API_KEY` as secrets **in each calling repo**
+Set `ANTHROPIC_API_KEY` and/or `OPENAI_API_KEY` as secrets **in each calling repo**
 (only for the providers you tick). They reach the workflow through `secrets: inherit`.
 
 Never add them to this repo:
@@ -86,15 +87,14 @@ report, pushes, and runs `gh pr create`. Agents never commit or push themselves.
 | Agent | Command | Permissions |
 |---|---|---|
 | Claude Code | `claude -p … --permission-mode acceptEdits --allowedTools Read,Edit,Write,Glob,Grep` | Edits only, no shell (so it can't run tests). |
-| Codex | `codex exec --sandbox workspace-write …` | Workspace-write sandbox. |
-| Gemini CLI | `gemini -p … --approval-mode auto_edit --skip-trust` | Auto-approves edits. |
+| Codex | `openai/codex-action` (`:workspace` profile, `drop-sudo`) | Workspace-write sandbox; the action sets up user namespaces on GitHub runners. |
 
-Gemini CLI stands in for Google Antigravity, which is a desktop app and can't be scripted.
+Gemini CLI was removed: its model refused to do vulnerability review of a repository, even when framed defensively.
 
 ## Run locally
 
 Requires Node 18+, git, an authenticated `gh`, and the CLIs you want to run
-(`npm i -g @anthropic-ai/claude-code @openai/codex @google/gemini-cli`). Works on Windows, macOS and Linux.
+(`npm i -g @anthropic-ai/claude-code @openai/codex`). Works on Windows, macOS and Linux.
 
 ```bash
 AGENTS=claude ANTHROPIC_API_KEY=... node scripts/security-review.mjs path/to/repo
@@ -102,9 +102,9 @@ AGENTS=claude ANTHROPIC_API_KEY=... node scripts/security-review.mjs path/to/rep
 
 | Env var | Default | Notes |
 |---|---|---|
-| `AGENTS` | `claude codex gemini` | Space-separated. Agents without a CLI or key are skipped. |
+| `AGENTS` | `claude codex` | Space-separated. Agents without a CLI or key are skipped. |
 | `BASE_BRANCH` | origin's default branch | |
-| `CLAUDE_MODEL` / `CODEX_MODEL` / `GEMINI_MODEL` | CLI default | |
+| `CLAUDE_MODEL` / `CODEX_MODEL` | CLI default | |
 | `DRAFT` | `1` | `0` for ready-for-review PRs. |
 | `REPORT_DIR` | `security-reviews` | Where the report is committed. |
 | `AGENT_TIMEOUT_MIN` | `60` | |

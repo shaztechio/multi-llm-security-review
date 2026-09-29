@@ -14,7 +14,7 @@
 # limitations under the License.
 
 # Reusable multi-agent security review.
-# Claude Code, Codex and Gemini CLI each review the calling repo in parallel and open
+# Claude Code and Codex each review the calling repo in parallel and open
 # their own PR with fixes + a findings report.
 #
 # Call it from another repo (see examples/caller.yml):
@@ -24,7 +24,7 @@
 # plus { security-events: write, actions: read } when upload-sarif is on (the default).
 # and enable Settings → Actions → General → "Allow GitHub Actions to create and approve pull requests".
 #
-# API keys (ANTHROPIC_API_KEY / OPENAI_API_KEY / GEMINI_API_KEY) are secrets of the CALLING repo only.
+# API keys (ANTHROPIC_API_KEY / OPENAI_API_KEY) are secrets of the CALLING repo only.
 # The run fails if a selected provider has no key, or if it is run from this repo itself.
 
 name: Security review (reusable)
@@ -38,10 +38,6 @@ on:
         default: true
       openai:
         description: "Run OpenAI (Codex)"
-        type: boolean
-        default: true
-      gemini:
-        description: "Run Google (Gemini CLI)"
         type: boolean
         default: true
       draft:
@@ -66,9 +62,6 @@ on:
         description: "Codex reasoning effort (low/medium/high/xhigh); blank = Codex default"
         type: string
         default: "high"
-      gemini-model:
-        type: string
-        default: ""
       agent-timeout-minutes:
         description: "Kill an agent after this many minutes (keep under 105)"
         type: number
@@ -86,8 +79,6 @@ on:
         required: false
       OPENAI_API_KEY:
         required: false
-      GEMINI_API_KEY:
-        required: false
 
 jobs:
   plan:
@@ -99,10 +90,8 @@ jobs:
         env:
           ANTHROPIC: ${{ inputs.anthropic }}
           OPENAI: ${{ inputs.openai }}
-          GEMINI: ${{ inputs.gemini }}
           HAS_ANTHROPIC_KEY: ${{ secrets.ANTHROPIC_API_KEY != '' }}
           HAS_OPENAI_KEY: ${{ secrets.OPENAI_API_KEY != '' }}
-          HAS_GEMINI_KEY: ${{ secrets.GEMINI_API_KEY != '' }}
         run: |
           # API keys belong to the calling repo only; this repo must never hold them or run itself.
           if [[ "$GITHUB_REPOSITORY" == "shaztechio/multi-llm-security-review" ]]; then
@@ -116,7 +105,6 @@ jobs:
           }
           pick "$ANTHROPIC" "$HAS_ANTHROPIC_KEY" claude ANTHROPIC_API_KEY
           pick "$OPENAI"    "$HAS_OPENAI_KEY"    codex  OPENAI_API_KEY
-          pick "$GEMINI"    "$HAS_GEMINI_KEY"    gemini GEMINI_API_KEY
           if [[ ${#missing[@]} -gt 0 ]]; then
             for s in "${missing[@]}"; do
               echo "::error::$s is not set. Add it as a secret in $GITHUB_REPOSITORY and pass it (secrets: inherit), or untick that provider."
@@ -161,7 +149,6 @@ jobs:
           case "${{ matrix.agent }}" in
             claude) npm install -g @anthropic-ai/claude-code ;;
             codex)  ;; # installed by openai/codex-action
-            gemini) npm install -g @google/gemini-cli ;;
           esac
 
       # Codex runs through openai/codex-action instead of the CLI: the action sets up the
@@ -205,10 +192,8 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           ANTHROPIC_API_KEY: ${{ matrix.agent == 'claude' && secrets.ANTHROPIC_API_KEY || '' }}
           # OPENAI_API_KEY is only given to openai/codex-action above, never to this step
-          GEMINI_API_KEY:    ${{ matrix.agent == 'gemini' && secrets.GEMINI_API_KEY    || '' }}
           CLAUDE_MODEL: ${{ inputs.claude-model }}
           CODEX_MODEL:  ${{ inputs.codex-model }}
-          GEMINI_MODEL: ${{ inputs.gemini-model }}
           SARIF_DIR: ${{ runner.temp }}/sarif
           PREPARED_CODEX_WORKTREE: ${{ matrix.agent == 'codex' && format('{0}/codex-wt', runner.temp) || '' }}
         shell: bash # implies -o pipefail, so a failing script fails the job despite tee

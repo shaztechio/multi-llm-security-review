@@ -41,6 +41,7 @@ If you copied an older `caller.yml`, add those two permissions and the `upload-s
 | `openrouter-model` | `z-ai/glm-5.3` | OpenRouter model slug. |
 | `openrouter-max-output-tokens` | `16000` | Output cap per request. OpenRouter reserves credit from it, so lower needs less balance. |
 | `openrouter-max-context-tokens` | Claude Code's 200k | The model's real context window, if you know it. |
+| `stream-logs` | `false` | One progress line per tool call in the job log, for the Claude and OpenRouter agents. See [Live progress](#live-progress). |
 | `draft` | `true` | Open PRs as drafts. |
 | `upload-sarif` | `true` | Upload findings to code scanning. Untick on private repos without GitHub Code Security. |
 | `base-branch` | repo default | Branch to review and target. |
@@ -110,6 +111,19 @@ edit-only tools. The PR, branch and code scanning category are named `openrouter
   200k context window. That is harmless, and `openrouter-max-context-tokens` corrects it.
 - Not yet verified against every Claude Code release. Existing agents are unaffected.
 - Locally: `AGENTS=openrouter OPENROUTER_API_KEY=... OPENROUTER_MODEL=vendor/model node scripts/security-review.mjs`.
+
+## Live progress
+
+By default an agent's own output goes to a file (uploaded as the `security-review-<agent>-log` artifact), so the
+job log shows only `[agent] reviewing…` until the end. Tick `stream-logs` (or set `STREAM_LOGS=1` locally) to run
+Claude Code with `--output-format stream-json --verbose` and print one line per tool call for the `claude` and
+`openrouter` agents, for example `[openrouter] Read apps/dotnet/src/Core/BackupManager.cs`, plus API retries and a
+final line with turns, time and cost. Codex already prints live through its action.
+
+- **Only the tool and the path or pattern it was pointed at are printed.** Never the model's text, its reasoning, tool
+  results or file contents, so unfixed findings do not appear in a public job log as they are made. The full stream
+  still goes to the agent's log file.
+- Off by default. `--output-format stream-json --verbose` changes only what Claude Code prints, not what it sends.
 
 ## Run locally
 

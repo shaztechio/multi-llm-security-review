@@ -35,6 +35,9 @@
 //   DRAFT=1                        open PRs as drafts (0 to disable)
 //   PR_TITLE_PREFIX="fix(security)"  Conventional Commit type/scope for PR titles and commits
 //   AGENT_TIMEOUT_MIN=60           kill an agent that runs longer than this
+//   STREAM_LOGS=1                  print one progress line per tool call of the Claude Code based agents
+//                                  (claude, openrouter) to the job log. Tool name and path only: never the
+//                                  model's text or file contents. The full stream still goes to the agent log.
 //   SARIF_DIR=<run dir>            where each agent's findings are written as <agent>.sarif
 //                                  (never committed; the workflow uploads them to code scanning)
 
@@ -42,6 +45,7 @@ import { spawn, execFileSync } from "node:child_process";
 import { createWriteStream, existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, extname, isAbsolute, join, relative, resolve } from "node:path";
+import { summarizeStreamLine } from "./stream-summary.mjs";
 
 const env = process.env;
 const AGENTS = (env.AGENTS ?? "claude codex").split(/\s+/).filter(Boolean);
@@ -50,6 +54,11 @@ const REPORT_DIR = env.REPORT_DIR ?? "security-reviews";
 const DRAFT = (env.DRAFT ?? "1") === "1";
 const TITLE_PREFIX = env.PR_TITLE_PREFIX ?? "fix(security)"; // repos that squash-merge often require Conventional Commit titles
 const TIMEOUT_MS = Number(env.AGENT_TIMEOUT_MIN ?? 60) * 60_000;
+const STREAM_LOGS = (env.STREAM_LOGS ?? "0") === "1";
+// The agents that run Claude Code, which can emit stream-json. Codex runs through its action, which already
+// prints live to the job log.
+const STREAMS = new Set(["claude", "openrouter"]);
+const STREAM_FLAGS = ["--output-format", "stream-json", "--verbose"];
 const REPORT_FILE = ".security-review.md"; // agents write here, inside their worktree
 const SARIF_FILE = ".security-review.sarif";
 
@@ -101,6 +110,7 @@ const AGENT_DEFS = {
       "--permission-mode", "acceptEdits",
       "--allowedTools", "Read,Edit,Write,Glob,Grep",
       ...(env.CLAUDE_MODEL ? ["--model", env.CLAUDE_MODEL] : []),
+      ...(STREAM_LOGS ? STREAM_FLAGS : []),
     ],
   },
   codex: {
@@ -133,6 +143,7 @@ const AGENT_DEFS = {
       "--permission-mode", "acceptEdits",
       "--allowedTools", "Read,Edit,Write,Glob,Grep",
       "--model", OPENROUTER_MODEL,
+      ...(STREAM_LOGS ? STREAM_FLAGS : []),
     ],
   },
 };
@@ -164,12 +175,25 @@ function resolveBin(bin) {
 }
 
 // Run an agent CLI, streaming stdout/stderr to a log file. Resolves with the exit code.
-function runCli(cmd, args, { cwd, logPath, extraEnv = {} }) {
+function runCli(cmd, args, { cwd, logPath, extraEnv = {}, onStdoutLine }) {
   return new Promise((resolveP) => {
     const out = createWriteStream(logPath);
     const child = spawn(cmd, args, { cwd, env: { ...env, ...extraEnv }, stdio: ["ignore", "pipe", "pipe"] });
     child.stdout.pipe(out, { end: false });
     child.stderr.pipe(out, { end: false });
+    if (onStdoutLine) {
+      let pending = "";
+      child.stdout.setEncoding("utf8");
+      child.stdout.on("data", (chunk) => {
+        pending += chunk;
+        let newline;
+        while ((newline = pending.indexOf("\n")) >= 0) {
+          const line = pending.slice(0, newline).trim();
+          pending = pending.slice(newline + 1);
+          if (line) { try { onStdoutLine(line); } catch { /* progress output must never fail a review */ } }
+        }
+      });
+    }
     const timer = setTimeout(() => {
       out.write(`\n[security-review] timed out after ${TIMEOUT_MS / 60_000} min, killing\n`);
       child.kill("SIGTERM");
@@ -259,7 +283,12 @@ async function runAgent(agent, ctx) {
     sh("git", ["checkout", "--quiet", "-b", branch], { cwd: wt });
   } else {
     log(agent, `reviewing (log: ${logPath})`);
-    const code = await runCli(ctx.bins[agent].cmd, [...ctx.bins[agent].prefix, ...def.args()], { cwd: wt, logPath, extraEnv: def.extraEnv?.() });
+    const code = await runCli(ctx.bins[agent].cmd, [...ctx.bins[agent].prefix, ...def.args()], {
+      cwd: wt, logPath, extraEnv: def.extraEnv?.(),
+      onStdoutLine: STREAM_LOGS && STREAMS.has(agent)
+        ? (line) => { const summary = summarizeStreamLine(line); if (summary) log(agent, summary); }
+        : undefined,
+    });
     if (code !== 0) log(agent, `agent exited with code ${code}; see ${logPath}`);
   }
 

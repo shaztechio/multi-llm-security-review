@@ -51,6 +51,7 @@ import { createWriteStream, lstatSync, mkdirSync, mkdtempSync, readFileSync, ren
 import { tmpdir } from "node:os";
 import { dirname, extname, isAbsolute, join, relative, resolve } from "node:path";
 import { summarizeStreamLine } from "./stream-summary.mjs";
+import { agentEnvironment, reportDirectory } from "./security-boundaries.mjs";
 
 const env = process.env;
 const AGENTS = (env.AGENTS ?? "claude codex").split(/\s+/).filter(Boolean);
@@ -178,20 +179,6 @@ const AGENT_DEFS = {
 // ---- helpers ---------------------------------------------------------------
 
 const log = (agent, msg) => console.log(`[${agent}] ${msg}`);
-
-// Credentials that must never reach an agent subprocess: the token that can push to the repo and
-// open PRs, and every provider key except the one that agent needs. The agent reads a repository
-// whose contents it did not write, so a prompt injection there must not be able to pick up another
-// provider's key or a write token and copy it into the report, the SARIF or a fixed file.
-const PROVIDER_KEYS = new Set(Object.values(AGENT_DEFS).map((d) => d.key));
-const PUSH_TOKEN_VARS = ["GH_TOKEN", "GITHUB_TOKEN", "GH_ENTERPRISE_TOKEN", "GITHUB_ENTERPRISE_TOKEN"];
-
-function agentEnv(def) {
-  const childEnv = { ...env };
-  for (const k of PROVIDER_KEYS) if (k !== def.key) delete childEnv[k];
-  for (const k of PUSH_TOKEN_VARS) delete childEnv[k];
-  return { ...childEnv, ...(def.extraEnv?.() ?? {}) };
-}
 
 function sh(cmd, args, opts = {}) {
   return execFileSync(cmd, args, { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], ...opts }).trim();
@@ -345,7 +332,7 @@ async function runAgent(agent, ctx) {
   } else {
     log(agent, `reviewing (log: ${logPath})`);
     const code = await runCli(ctx.bins[agent].cmd, [...ctx.bins[agent].prefix, ...def.args()], {
-      cwd: wt, logPath, childEnv: agentEnv(def),
+      cwd: wt, logPath, childEnv: agentEnvironment(env, def.key, def.extraEnv?.() ?? {}),
       onStdoutLine: STREAM_LOGS && STREAMS.has(agent)
         // Claude Code's cost figure is an estimate at Claude's prices, so it is only shown for the claude agent.
         ? (line) => { const summary = summarizeStreamLine(line, { cost: agent === "claude" }); if (summary) log(agent, summary); }
@@ -372,7 +359,7 @@ async function runAgent(agent, ctx) {
     throw new Error(`report has no Coverage section, so it cannot show what was reviewed; not opening a PR (see ${logPath})`);
   }
 
-  mkdirSync(join(wt, REPORT_DIR), { recursive: true });
+  reportDirectory(wt, REPORT_DIR);
   const committedReport = `${REPORT_DIR}/${STAMP}-${agent}.md`;
   renameSync(report, join(wt, committedReport));
 

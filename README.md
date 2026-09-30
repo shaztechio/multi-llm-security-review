@@ -177,6 +177,11 @@ scripts/run-local.sh [repo-path]        # Linux, macOS
 Agent logs are kept in a `secreview-*` temp directory, printed at the end. In CI they're uploaded as
 the `security-review-<agent>-log` artifact.
 
+Agent subprocesses get only their own provider's credentials, not the GitHub tokens or other providers'
+keys. That is environment filtering, not isolation: credential files, an SSH agent and other secrets you
+put in the environment are still reachable. `REPORT_DIR` must stay inside the worktree and is refused if
+any part of it is a symbolic link.
+
 Local runs write the SARIF but don't upload it. To upload one by hand (needs `security-events` access):
 
 ```bash

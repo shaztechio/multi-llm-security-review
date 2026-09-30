@@ -51,6 +51,7 @@ import { createWriteStream, existsSync, mkdirSync, mkdtempSync, readFileSync, re
 import { tmpdir } from "node:os";
 import { dirname, extname, isAbsolute, join, relative, resolve } from "node:path";
 import { summarizeStreamLine } from "./stream-summary.mjs";
+import { agentEnvironment, reportDirectory, reviewFile } from "./security-boundaries.mjs";
 
 const env = process.env;
 const AGENTS = (env.AGENTS ?? "claude codex").split(/\s+/).filter(Boolean);
@@ -193,10 +194,10 @@ function resolveBin(bin) {
 }
 
 // Run an agent CLI, streaming stdout/stderr to a log file. Resolves with the exit code.
-function runCli(cmd, args, { cwd, logPath, extraEnv = {}, onStdoutLine }) {
+function runCli(cmd, args, { cwd, logPath, key, extraEnv = {}, onStdoutLine }) {
   return new Promise((resolveP) => {
     const out = createWriteStream(logPath);
-    const child = spawn(cmd, args, { cwd, env: { ...env, ...extraEnv }, stdio: ["ignore", "pipe", "pipe"] });
+    const child = spawn(cmd, args, { cwd, env: agentEnvironment(env, key, extraEnv), stdio: ["ignore", "pipe", "pipe"] });
     child.stdout.pipe(out, { end: false });
     child.stderr.pipe(out, { end: false });
     if (onStdoutLine) {
@@ -236,6 +237,7 @@ function runCli(cmd, args, { cwd, logPath, extraEnv = {}, onStdoutLine }) {
 function exportSarif(agent, wt, ctx) {
   const src = join(wt, SARIF_FILE);
   if (!existsSync(src)) { log(agent, "no SARIF written"); return; }
+  reviewFile(wt, SARIF_FILE);
   let sarif;
   try {
     sarif = JSON.parse(readFileSync(src, "utf8"));
@@ -302,7 +304,7 @@ async function runAgent(agent, ctx) {
   } else {
     log(agent, `reviewing (log: ${logPath})`);
     const code = await runCli(ctx.bins[agent].cmd, [...ctx.bins[agent].prefix, ...def.args()], {
-      cwd: wt, logPath, extraEnv: def.extraEnv?.(),
+      cwd: wt, logPath, key: def.key, extraEnv: def.extraEnv?.(),
       onStdoutLine: STREAM_LOGS && STREAMS.has(agent)
         // Claude Code's cost figure is an estimate at Claude's prices, so it is only shown for the claude agent.
         ? (line) => { const summary = summarizeStreamLine(line, { cost: agent === "claude" }); if (summary) log(agent, summary); }
@@ -314,6 +316,7 @@ async function runAgent(agent, ctx) {
   exportSarif(agent, wt, ctx); // before git add -A, so the SARIF is never committed
 
   const report = join(wt, REPORT_FILE);
+  if (existsSync(report)) reviewFile(wt, REPORT_FILE);
   if (!existsSync(report) || statSync(report).size === 0) {
     throw new Error(`no findings report written, so the review did not complete; not opening a PR (see ${logPath})`);
   }
@@ -322,7 +325,7 @@ async function runAgent(agent, ctx) {
     throw new Error(`report has no Coverage section, so it cannot show what was reviewed; not opening a PR (see ${logPath})`);
   }
 
-  mkdirSync(join(wt, REPORT_DIR), { recursive: true });
+  reportDirectory(wt, REPORT_DIR);
   const committedReport = `${REPORT_DIR}/${STAMP}-${agent}.md`;
   renameSync(report, join(wt, committedReport));
 

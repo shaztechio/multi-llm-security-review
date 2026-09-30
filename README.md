@@ -135,6 +135,7 @@ final line with turns, time and cost. Codex already prints live through its acti
   still goes to the agent's log file.
 - Off by default. `--output-format stream-json --verbose` changes only what Claude Code prints, not what it sends.
 - The cost Claude Code reports is an estimate at Claude's prices, so it is shown only for the `claude` agent.
+- Free-form error messages and Grep search patterns are omitted from progress output because they can contain secrets.
 
 ## Run locally
 
@@ -174,6 +175,11 @@ scripts/run-local.sh [repo-path]        # Linux, macOS
 
 Agent logs are kept in a `secreview-*` temp directory, printed at the end. In CI they're uploaded as
 the `security-review-<agent>-log` artifact.
+
+Agent subprocesses receive only their selected provider's known API credentials, not the publisher's
+GitHub tokens or other providers' keys. This is environment filtering, not full isolation from local
+credential files or unrelated custom environment secrets. Reports and SARIF must be regular files;
+`REPORT_DIR` must stay inside the worktree and must not traverse symbolic links.
 
 Local runs write the SARIF but don't upload it. To upload one by hand (needs `security-events` access):
 

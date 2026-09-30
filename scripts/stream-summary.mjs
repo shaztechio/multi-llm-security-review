@@ -30,9 +30,9 @@ const clean = (value) =>
     .slice(0, MAX);
 
 // The path, pattern or command-free argument a tool call was aimed at.
-function target(input) {
+function target(input, tool) {
   if (!input || typeof input !== "object") return "";
-  return clean(input.file_path ?? input.path ?? input.pattern ?? "");
+  return clean(input.file_path ?? input.path ?? (tool === "Glob" ? input.pattern : "") ?? "");
 }
 
 // `cost`: include Claude Code's own cost estimate. It prices tokens as if the model were a Claude model, so for
@@ -53,7 +53,7 @@ export function summarizeStreamLine(line, { cost = true } = {}) {
     }
     if (event.subtype === "api_retry") {
       const status = event.error_status == null ? "no response" : `HTTP ${event.error_status}`;
-      return `API retry ${event.attempt}/${event.max_retries}: ${clean(event.error) || "unknown"} (${status}), next in ${Math.round((event.retry_delay_ms ?? 0) / 1000)}s`;
+      return `API retry ${event.attempt}/${event.max_retries}: (${status}), next in ${Math.round((event.retry_delay_ms ?? 0) / 1000)}s`;
     }
     if (event.subtype === "permission_denied") {
       return `permission denied for ${clean(event.tool_name) || "a tool"}`;
@@ -66,7 +66,7 @@ export function summarizeStreamLine(line, { cost = true } = {}) {
     if (!Array.isArray(blocks)) return null;
     const calls = blocks
       .filter((b) => b?.type === "tool_use")
-      .map((b) => [clean(b.name), target(b.input)].filter(Boolean).join(" "));
+      .map((b) => [clean(b.name), target(b.input, b.name)].filter(Boolean).join(" "));
     return calls.length ? calls.join("; ") : null;
   }
 
@@ -76,9 +76,6 @@ export function summarizeStreamLine(line, { cost = true } = {}) {
     if (event.num_turns != null) parts.push(`${event.num_turns} turns`);
     if (event.duration_ms != null) parts.push(`${Math.round(event.duration_ms / 1000)}s`);
     if (cost && typeof event.total_cost_usd === "number") parts.push(`~$${event.total_cost_usd.toFixed(2)} (estimate)`);
-    // On an error the result is the failure message (a 402, an auth error); on success it is the model's
-    // own summary, which stays out of the log.
-    if (event.is_error && event.result) parts.push(clean(event.result));
     return parts.join(", ");
   }
 

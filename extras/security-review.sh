@@ -75,22 +75,25 @@ preflight() {
   [[ -n "${!key:-}" ]]        || { echo "[$agent] $key not set, skipping"; return 1; }
 }
 
-run_cli() {
+run_cli() (
   local agent="$1"
+  local anthropic_key="${ANTHROPIC_API_KEY:-}" openai_key="${OPENAI_API_KEY:-}" gemini_key="${GEMINI_API_KEY:-}"
+  unset GH_TOKEN GITHUB_TOKEN GH_ENTERPRISE_TOKEN GITHUB_ENTERPRISE_TOKEN ACTIONS_RUNTIME_TOKEN
+  unset ANTHROPIC_API_KEY ANTHROPIC_AUTH_TOKEN OPENAI_API_KEY CODEX_API_KEY OPENROUTER_API_KEY GEMINI_API_KEY GOOGLE_API_KEY
   case "$agent" in
     claude)
-      claude -p "$PROMPT" \
+      ANTHROPIC_API_KEY="$anthropic_key" claude -p "$PROMPT" \
         --permission-mode acceptEdits \
         --allowedTools "Read,Edit,Write,Glob,Grep" \
         ${CLAUDE_MODEL:+--model "$CLAUDE_MODEL"} ;;
     codex)
-      CODEX_API_KEY="$OPENAI_API_KEY" codex exec --full-auto \
+      OPENAI_API_KEY="$openai_key" CODEX_API_KEY="$openai_key" codex exec --full-auto \
         ${CODEX_MODEL:+--model "$CODEX_MODEL"} "$PROMPT" ;;
     gemini)
-      gemini -p "$PROMPT" --approval-mode auto_edit \
+      GEMINI_API_KEY="$gemini_key" gemini -p "$PROMPT" --approval-mode auto_edit \
         ${GEMINI_MODEL:+--model "$GEMINI_MODEL"} ;;
   esac
-}
+)
 
 run_agent() {
   local agent="$1"
@@ -105,12 +108,23 @@ run_agent() {
   fi
 
   cd "$wt"
-  if [[ ! -s "$REPORT_FILE" ]]; then
+  if [[ ! -f "$REPORT_FILE" || -L "$REPORT_FILE" || ! -s "$REPORT_FILE" ]]; then
     echo "[$agent] no findings report written; skipping PR (see $log)"
     return 0
   fi
 
-  mkdir -p "$REPORT_DIR"
+  case "$REPORT_DIR" in
+    ""|.|..|/*|../*|*/../*|*/..) echo "REPORT_DIR must stay inside the worktree" >&2; return 1 ;;
+  esac
+  local current_dir="$wt" component
+  local components=()
+  IFS=/ read -r -a components <<< "$REPORT_DIR"
+  for component in "${components[@]}"; do
+    [[ -n "$component" && "$component" != . ]] || continue
+    current_dir="$current_dir/$component"
+    [[ ! -L "$current_dir" ]] || { echo "REPORT_DIR must not contain symbolic links" >&2; return 1; }
+    mkdir -p "$current_dir"
+  done
   local committed_report="$REPORT_DIR/${STAMP}-${agent}.md"
   mv "$REPORT_FILE" "$committed_report"
 

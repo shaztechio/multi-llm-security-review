@@ -55,10 +55,10 @@ test("session start and API retries are reported", () => {
     "session started (model z-ai/glm-5.3, 2 tools)");
   assert.equal(
     summarizeStreamLine(line({ type: "system", subtype: "api_retry", attempt: 2, max_retries: 10, retry_delay_ms: 4000, error_status: 402, error: "billing_error" })),
-    "API retry 2/10: billing_error (HTTP 402), next in 4s");
+    "API retry 2/10: (HTTP 402), next in 4s");
 });
 
-test("a successful result keeps the model's summary out, a failed one shows the error", () => {
+test("successful and failed results keep free-form text out", () => {
   const ok = summarizeStreamLine(line({ type: "result", subtype: "success", is_error: false, result: "I found a critical flaw in auth", num_turns: 42, duration_ms: 125000, total_cost_usd: 1.234 }));
   assert.equal(ok, "finished (success), 42 turns, 125s, ~$1.23 (estimate)");
   // Another provider's model: Claude Code's estimate is at Claude prices, so it is left out.
@@ -66,7 +66,7 @@ test("a successful result keeps the model's summary out, a failed one shows the 
     "finished (success), 42 turns, 125s");
   assert.doesNotMatch(ok, /critical flaw/);
   const bad = summarizeStreamLine(line({ type: "result", subtype: "error_during_execution", is_error: true, result: "API Error: 402 would exceed your available credits", num_turns: 1, duration_ms: 3000 }));
-  assert.equal(bad, "ended with an error, 1 turns, 3s, API Error: 402 would exceed your available credits");
+  assert.equal(bad, "ended with an error, 1 turns, 3s");
 });
 
 test("a denied tool call is reported by tool name", () => {
@@ -90,4 +90,14 @@ test("long targets are cut and non-JSON is ignored", () => {
   assert.equal(summarizeStreamLine("Warning: something on stdout"), null);
   assert.equal(summarizeStreamLine("42"), null);
   assert.equal(summarizeStreamLine("null"), null);
+});
+
+test("Grep patterns and free-form errors are not disclosed", () => {
+  const events = [
+    { type: "assistant", message: { content: [{ type: "tool_use", name: "Grep", input: { pattern: "sensitive-value" } }] } },
+    { type: "system", subtype: "api_retry", error: "sensitive-value", error_status: 401 },
+    { type: "result", is_error: true, result: "sensitive-value" },
+  ];
+  for (const event of events) assert.doesNotMatch(summarizeStreamLine(line(event)), /sensitive-value/);
+  assert.equal(summarizeStreamLine(line(events[0])), "Grep");
 });

@@ -35,7 +35,9 @@ function target(input) {
   return clean(input.file_path ?? input.path ?? input.pattern ?? "");
 }
 
-export function summarizeStreamLine(line) {
+// `cost`: include Claude Code's own cost estimate. It prices tokens as if the model were a Claude model, so for
+// another model behind a gateway (OpenRouter) it is wrong and only misleads.
+export function summarizeStreamLine(line, { cost = true } = {}) {
   let event;
   try {
     event = JSON.parse(line);
@@ -53,6 +55,9 @@ export function summarizeStreamLine(line) {
       const status = event.error_status == null ? "no response" : `HTTP ${event.error_status}`;
       return `API retry ${event.attempt}/${event.max_retries}: ${clean(event.error) || "unknown"} (${status}), next in ${Math.round((event.retry_delay_ms ?? 0) / 1000)}s`;
     }
+    if (event.subtype === "permission_denied") {
+      return `permission denied for ${clean(event.tool_name) || "a tool"}`;
+    }
     return null;
   }
 
@@ -66,10 +71,11 @@ export function summarizeStreamLine(line) {
   }
 
   if (event.type === "result") {
-    const parts = [event.is_error ? `finished with an error (${clean(event.subtype)})` : `finished (${clean(event.subtype) || "success"})`];
+    // A failed request can still come back with subtype "success" and is_error set, so say "error" alone.
+    const parts = [event.is_error ? "ended with an error" : `finished (${clean(event.subtype) || "success"})`];
     if (event.num_turns != null) parts.push(`${event.num_turns} turns`);
     if (event.duration_ms != null) parts.push(`${Math.round(event.duration_ms / 1000)}s`);
-    if (typeof event.total_cost_usd === "number") parts.push(`~$${event.total_cost_usd.toFixed(2)}`);
+    if (cost && typeof event.total_cost_usd === "number") parts.push(`~$${event.total_cost_usd.toFixed(2)} (estimate)`);
     // On an error the result is the failure message (a 402, an auth error); on success it is the model's
     // own summary, which stays out of the log.
     if (event.is_error && event.result) parts.push(clean(event.result));

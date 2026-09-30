@@ -124,6 +124,7 @@ final line with turns, time and cost. Codex already prints live through its acti
   results or file contents, so unfixed findings do not appear in a public job log as they are made. The full stream
   still goes to the agent's log file.
 - Off by default. `--output-format stream-json --verbose` changes only what Claude Code prints, not what it sends.
+- The cost Claude Code reports is an estimate at Claude's prices, so it is shown only for the `claude` agent.
 
 ## Run locally
 

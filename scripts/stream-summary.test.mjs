@@ -60,10 +60,19 @@ test("session start and API retries are reported", () => {
 
 test("a successful result keeps the model's summary out, a failed one shows the error", () => {
   const ok = summarizeStreamLine(line({ type: "result", subtype: "success", is_error: false, result: "I found a critical flaw in auth", num_turns: 42, duration_ms: 125000, total_cost_usd: 1.234 }));
-  assert.equal(ok, "finished (success), 42 turns, 125s, ~$1.23");
+  assert.equal(ok, "finished (success), 42 turns, 125s, ~$1.23 (estimate)");
+  // Another provider's model: Claude Code's estimate is at Claude prices, so it is left out.
+  assert.equal(summarizeStreamLine(line({ type: "result", subtype: "success", num_turns: 42, duration_ms: 125000, total_cost_usd: 26.36 }), { cost: false }),
+    "finished (success), 42 turns, 125s");
   assert.doesNotMatch(ok, /critical flaw/);
   const bad = summarizeStreamLine(line({ type: "result", subtype: "error_during_execution", is_error: true, result: "API Error: 402 would exceed your available credits", num_turns: 1, duration_ms: 3000 }));
-  assert.match(bad, /^finished with an error \(error_during_execution\), 1 turns, 3s, API Error: 402/);
+  assert.equal(bad, "ended with an error, 1 turns, 3s, API Error: 402 would exceed your available credits");
+});
+
+test("a denied tool call is reported by tool name", () => {
+  assert.equal(
+    summarizeStreamLine(line({ type: "system", subtype: "permission_denied", tool_name: "Bash", message: "Permission to use Bash has been denied. IMPORTANT: ..." })),
+    "permission denied for Bash");
 });
 
 test("control characters cannot break the line or forge a workflow command", () => {

@@ -388,18 +388,42 @@ async function main() {
   // origin/<base>), so skip its CLI, key check and worktree creation and just publish its output.
   const ctx = { repo, base, runDir, bins: {}, prepared: {} };
 
+  // Remove the worktrees, and any branch nothing was committed to, however this run ends. A crash or
+  // Ctrl-C would otherwise leave branches that make the next run in the same minute fail.
+  const owned = [];
+  let cleaned = false;
+  const cleanup = () => {
+    if (cleaned) return;
+    cleaned = true;
+    for (const { agent, wt } of owned) {
+      const branch = `security-review/${agent}-${STAMP}`;
+      try { git("worktree", "remove", "--force", wt); } catch { /* already gone */ }
+      try {
+        if (git("rev-list", "--count", `origin/${base}..${branch}`) === "0") git("branch", "-D", branch);
+      } catch { /* branch was never created */ }
+    }
+  };
+  process.on("exit", cleanup);
+  for (const sig of ["SIGINT", "SIGTERM"]) process.on(sig, () => process.exit(130));
+
   // Preflight, then create worktrees one at a time (parallel `git worktree add` races on git's lock).
   const ready = [];
   for (const agent of AGENTS) {
     const def = AGENT_DEFS[agent];
     if (!def) { log(agent, "unknown agent, skipping"); continue; }
     const preparedDir = env[`PREPARED_${agent.toUpperCase()}_WORKTREE`];
-    if (preparedDir) { ctx.prepared[agent] = resolve(preparedDir); ready.push(agent); continue; }
+    if (preparedDir) {
+      ctx.prepared[agent] = resolve(preparedDir);
+      owned.push({ agent, wt: ctx.prepared[agent] });
+      ready.push(agent);
+      continue;
+    }
     let bin;
     try { bin = resolveBin(def.bin); } catch (err) { log(agent, `${err.message}, skipping`); continue; }
     if (!bin) { log(agent, `'${def.bin}' not installed, skipping`); continue; }
     if (!env[def.key]) { log(agent, `${def.key} not set, skipping`); continue; }
     git("worktree", "add", "--quiet", "-b", `security-review/${agent}-${STAMP}`, join(runDir, agent), `origin/${base}`);
+    owned.push({ agent, wt: join(runDir, agent) });
     ctx.bins[agent] = bin;
     ready.push(agent);
   }
@@ -417,9 +441,7 @@ async function main() {
     }
   });
 
-  for (const agent of ready) {
-    try { git("worktree", "remove", "--force", ctx.prepared[agent] ?? join(runDir, agent)); } catch { /* already gone */ }
-  }
+  cleanup();
   console.log(`Done. Logs kept in ${runDir}`);
 }
 

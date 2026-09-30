@@ -148,6 +148,8 @@ AGENTS=claude ANTHROPIC_API_KEY=... node scripts/security-review.mjs path/to/rep
 The wrapper scripts check the prerequisites and your keys, then call the same script. They read keys
 from the environment or a git-ignored `.env` (copy [`.env.example`](.env.example); variables already
 set in your shell win). `AGENTS` defaults to `claude openrouter`, and `OPENROUTER_MAX_TURNS` to `60`.
+`PATH`, `HOME`, `NODE_*`, `GIT_*`, `LD_*`, `DYLD_*` and shell-startup variables are ignored in `.env`
+(with a warning), since a `.env` from someone else could otherwise run code; set them in your shell.
 Pass `-h` / `--help` for usage.
 
 ```bash

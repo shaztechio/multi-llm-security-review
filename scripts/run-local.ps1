@@ -25,7 +25,8 @@ Runs security-review.mjs locally on a repo.
 .DESCRIPTION
 Each agent reviews the code, fixes what it is confident about, pushes a branch and opens a
 draft PR. Keys are read from the session, or from a git-ignored .env file at the repo root
-(see .env.example). Variables already set in your session win over the file.
+(see .env.example). Variables already set in your session win over the file. PATH, HOME, NODE_*,
+GIT_*, LD_*, DYLD_* and similar are ignored in the file.
 
 Environment:
   ANTHROPIC_API_KEY     needed for agent "claude"
@@ -63,6 +64,12 @@ if (Test-Path $envFile) {
   foreach ($line in Get-Content $envFile) {
     if ($line -match '^\s*([A-Za-z_][A-Za-z0-9_]*)=(.*)$') {
       $name = $Matches[1]; $val = $Matches[2].Trim().Trim('"').Trim("'")
+      # A .env can arrive from elsewhere (a teammate, a cloned repo); these would turn it into code
+      # execution in the node/git/gh children, so they can only come from your own session.
+      if ($name -match '^(PATH|PATHEXT|COMSPEC|HOME|USERPROFILE|PSModulePath|NODE_.*|GIT_.*|LD_.*|DYLD_.*)$') {
+        Write-Warning "ignoring $name in $envFile (set it in your session if you mean it)"
+        continue
+      }
       if (-not (Get-Item "env:$name" -ErrorAction SilentlyContinue).Value) { Set-Item "env:$name" $val }
     }
   }

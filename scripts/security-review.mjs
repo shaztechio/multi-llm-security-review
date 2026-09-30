@@ -64,6 +64,10 @@ const STREAM_LOGS = (env.STREAM_LOGS ?? "0") === "1";
 // prints live to the job log.
 const STREAMS = new Set(["claude", "openrouter"]);
 const STREAM_FLAGS = ["--output-format", "stream-json", "--verbose"];
+// The repo under review is untrusted. Claude Code would otherwise load its .claude/settings.json (hooks are
+// shell commands it runs around every tool call, outside --allowedTools/--tools) and its .mcp.json servers.
+// Load user settings only, and no MCP servers.
+const UNTRUSTED_REPO_FLAGS = ["--setting-sources", "user", "--strict-mcp-config"];
 // One id for every request of this run. OpenRouter's prompt cache only helps if each turn lands on the same
 // provider, and its docs say a session id keeps routing consistent (x-session-id header).
 const SESSION_ID = `bunyi-review-${env.GITHUB_RUN_ID ?? randomUUID()}-${env.GITHUB_RUN_ATTEMPT ?? "1"}`;
@@ -120,6 +124,7 @@ const AGENT_DEFS = {
       // The model reads untrusted repo content, so limit it to these tools outright (allowedTools
       // only pre-approves; every other tool would stay available and just be denied on use).
       "--tools", "Read,Edit,Write,Glob,Grep",
+      ...UNTRUSTED_REPO_FLAGS,
       ...(env.CLAUDE_MODEL ? ["--model", env.CLAUDE_MODEL] : []),
       ...(STREAM_LOGS ? STREAM_FLAGS : []),
     ],
@@ -163,6 +168,7 @@ const AGENT_DEFS = {
       // available, and this model reached for Agent (sub-agents running in parallel, each holding a request
       // in flight, which is what OpenRouter's 402 "in-flight requests" refers to) and Bash (denied, so wasted turns).
       "--tools", "Read,Edit,Write,Glob,Grep",
+      ...UNTRUSTED_REPO_FLAGS,
       ...(env.OPENROUTER_MAX_TURNS ? ["--max-turns", env.OPENROUTER_MAX_TURNS] : []),
       ...(STREAM_LOGS ? STREAM_FLAGS : []),
     ],

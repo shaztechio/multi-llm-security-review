@@ -22,11 +22,13 @@
 // Requires Node 18+, git, gh (authenticated), and whichever agent CLIs you want to run:
 //   claude  (npm i -g @anthropic-ai/claude-code)   needs ANTHROPIC_API_KEY
 //   codex   (npm i -g @openai/codex)               needs OPENAI_API_KEY
+//   openrouter  runs the claude CLI against OpenRouter; needs OPENROUTER_API_KEY
 //
 // Optional env:
-//   AGENTS="claude codex"          which agents to run
+//   AGENTS="claude codex"          which agents to run (add "openrouter" to opt in)
 //   BASE_BRANCH=main               branch to review (default: origin's default branch)
 //   CLAUDE_MODEL / CODEX_MODEL   override each agent's model
+//   OPENROUTER_MODEL=vendor/model  OpenRouter model slug (default z-ai/glm-5.3)
 //   REPORT_DIR=security-reviews    where the findings file is committed in the PR
 //   DRAFT=1                        open PRs as drafts (0 to disable)
 //   PR_TITLE_PREFIX="fix(security)"  Conventional Commit type/scope for PR titles and commits
@@ -41,6 +43,7 @@ import { dirname, extname, isAbsolute, join, relative, resolve } from "node:path
 
 const env = process.env;
 const AGENTS = (env.AGENTS ?? "claude codex").split(/\s+/).filter(Boolean);
+const OPENROUTER_MODEL = env.OPENROUTER_MODEL || "z-ai/glm-5.3";
 const REPORT_DIR = env.REPORT_DIR ?? "security-reviews";
 const DRAFT = (env.DRAFT ?? "1") === "1";
 const TITLE_PREFIX = env.PR_TITLE_PREFIX ?? "fix(security)"; // repos that squash-merge often require Conventional Commit titles
@@ -104,6 +107,24 @@ const AGENT_DEFS = {
     extraEnv: () => ({ CODEX_API_KEY: env.OPENAI_API_KEY }),
     // --full-auto was removed in codex-cli 0.15x; exec is non-interactive, so the sandbox is the only knob.
     args: () => ["exec", "--sandbox", "workspace-write", ...(env.CODEX_MODEL ? ["--model", env.CODEX_MODEL] : []), PROMPT],
+  },
+  // Claude Code pointed at OpenRouter's Anthropic-compatible endpoint, with the same locked-down tools.
+  openrouter: {
+    bin: "claude",
+    key: "OPENROUTER_API_KEY",
+    extraEnv: () => ({
+      ANTHROPIC_BASE_URL: "https://openrouter.ai/api",
+      ANTHROPIC_AUTH_TOKEN: env.OPENROUTER_API_KEY,
+      ANTHROPIC_API_KEY: "", // must be empty so Claude Code uses the auth token
+      ANTHROPIC_MODEL: OPENROUTER_MODEL,
+      ANTHROPIC_SMALL_FAST_MODEL: OPENROUTER_MODEL,
+    }),
+    args: () => [
+      "-p", PROMPT,
+      "--permission-mode", "acceptEdits",
+      "--allowedTools", "Read,Edit,Write,Glob,Grep",
+      "--model", OPENROUTER_MODEL,
+    ],
   },
 };
 

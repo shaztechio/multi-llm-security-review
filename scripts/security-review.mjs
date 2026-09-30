@@ -117,6 +117,9 @@ const AGENT_DEFS = {
       "-p", PROMPT,
       "--permission-mode", "acceptEdits",
       "--allowedTools", "Read,Edit,Write,Glob,Grep",
+      // The model reads untrusted repo content, so limit it to these tools outright (allowedTools
+      // only pre-approves; every other tool would stay available and just be denied on use).
+      "--tools", "Read,Edit,Write,Glob,Grep",
       ...(env.CLAUDE_MODEL ? ["--model", env.CLAUDE_MODEL] : []),
       ...(STREAM_LOGS ? STREAM_FLAGS : []),
     ],
@@ -187,6 +190,15 @@ function agentEnv(def) {
 function sh(cmd, args, opts = {}) {
   return execFileSync(cmd, args, { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], ...opts }).trim();
 }
+
+// git's network operations (fetch, push): when GH_TOKEN is in the environment, pass it as a
+// per-command extraheader instead of relying on the credential actions/checkout persists in the
+// repo's .git/config — that file is readable by an agent working in one of the repo's worktrees
+// (Codex can run commands in its sandbox). Non-GitHub remotes and local runs without GH_TOKEN
+// fall back to whatever credential helper the repo already uses.
+const gitAuthArgs = () => env.GH_TOKEN
+  ? ["-c", `http.https://github.com/.extraheader=AUTHORIZATION: basic ${Buffer.from(`x-access-token:${env.GH_TOKEN}`).toString("base64")}`]
+  : [];
 
 // Resolve a CLI name to { cmd, prefix } for spawn() without a shell, or null if not installed.
 // On Windows, npm-global CLIs are .cmd shims that spawn() can't run without shell: true (which
@@ -372,7 +384,7 @@ async function runAgent(agent, ctx) {
     .split("\n")
     .filter((f) => f && !f.startsWith(`${REPORT_DIR}/`)).length;
   git("commit", "--quiet", "-m", `${TITLE_PREFIX}: apply ${agent} security review findings`);
-  git("push", "--quiet", "-u", "origin", branch);
+  git(...gitAuthArgs(), "push", "--quiet", "-u", "origin", branch);
 
   const reportText = readFileSync(join(wt, committedReport), "utf8");
   const bodyPath = join(ctx.runDir, `${agent}-body.md`);
@@ -405,7 +417,7 @@ async function main() {
     process.exit(1);
   }
 
-  git("fetch", "--quiet", "origin");
+  git(...gitAuthArgs(), "fetch", "--quiet", "origin");
   let base = env.BASE_BRANCH;
   if (!base) {
     try {

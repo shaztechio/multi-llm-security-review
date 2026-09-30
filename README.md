@@ -40,7 +40,9 @@ If you copied an older `caller.yml`, add those two permissions and the `upload-s
 | `openrouter` | `false` | Also run an OpenRouter model (experimental, see [OpenRouter](#openrouter)). |
 | `openrouter-model` | `z-ai/glm-5.3` | OpenRouter model slug. |
 | `openrouter-max-output-tokens` | `16000` | Output cap per request. OpenRouter reserves credit from it, so lower needs less balance. |
-| `openrouter-max-context-tokens` | Claude Code's 200k | The model's real context window, if you know it. |
+| `openrouter-max-context-tokens` | Claude Code's 200k | The model's real context window, if you know it. Do not raise it to 1M to "use" a big window: turns get more expensive. |
+| `openrouter-auto-compact-window` | `100000` | Compact the conversation at this many tokens (100000 to 1000000). Every turn re-sends it, so smaller is cheaper. |
+| `openrouter-max-turns` | none | Stop after this many turns. Reaching it fails the run, with no PR if the report was not written yet. |
 | `stream-logs` | `false` | One progress line per tool call in the job log, for the Claude and OpenRouter agents. See [Live progress](#live-progress). |
 | `draft` | `true` | Open PRs as drafts. |
 | `upload-sarif` | `true` | Upload findings to code scanning. Untick on private repos without GitHub Code Security. |
@@ -105,6 +107,12 @@ edit-only tools. The PR, branch and code scanning category are named `openrouter
 
 - The model must support tool use. If it doesn't write a report with a Coverage section, no PR is opened.
 - Use an OpenRouter key with a spend limit; there is no budget cap here.
+- **Cost is mostly input tokens.** An agent re-sends its whole conversation every turn, so a whole-repo review is
+  millions of input tokens and only tens of thousands of output tokens. The estimate Claude Code prints is at
+  Claude's prices, not the model's. Caching is what brings input down (Z.AI reads cost about a fifth), and it only
+  hits when each turn goes to the same provider: the agent sends a per-run `x-session-id` for that. Check the
+  Activity page of your OpenRouter account for `cached_tokens` per request. In your account's privacy settings you
+  can also allow only the provider whose cache you want.
 - OpenRouter answers `402 … would exceed your available credits` when a request's reserved cost (output cap
   times price, plus requests in flight) is more than the balance. Add credits, or lower `openrouter-max-output-tokens`.
 - Claude Code does not recognise most OpenRouter model ids and warns `unrecognized_model`; it then assumes a
@@ -141,6 +149,7 @@ AGENTS=claude ANTHROPIC_API_KEY=... node scripts/security-review.mjs path/to/rep
 | `BASE_BRANCH` | origin's default branch | |
 | `CLAUDE_MODEL` / `CODEX_MODEL` | CLI default | |
 | `OPENROUTER_MODEL` | `z-ai/glm-5.3` | Model for the `openrouter` agent (which is not in the default `AGENTS`). |
+| `OPENROUTER_AUTO_COMPACT_WINDOW` / `OPENROUTER_MAX_TURNS` | `100000` / none | Passed to Claude Code as `CLAUDE_CODE_AUTO_COMPACT_WINDOW` / `--max-turns`. |
 | `OPENROUTER_MAX_OUTPUT_TOKENS` / `OPENROUTER_MAX_CONTEXT_TOKENS` | `16000` / unset | Passed to Claude Code as `CLAUDE_CODE_MAX_OUTPUT_TOKENS` / `CLAUDE_CODE_MAX_CONTEXT_TOKENS`. |
 | `DRAFT` | `1` | `0` for ready-for-review PRs. |
 | `PR_TITLE_PREFIX` | `fix(security)` | PR titles and commits read `<prefix>: apply <agent> security review findings`, so repos that check Conventional Commit titles accept them. |

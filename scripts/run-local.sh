@@ -29,7 +29,8 @@ Runs scripts/security-review.mjs on repo-path (default: this repo). Each agent r
 code, fixes what it is confident about, pushes a branch and opens a draft PR.
 
 Keys are read from the environment, or from a git-ignored .env file at the repo root
-(see .env.example). Variables already set in your shell win over the file.
+(see .env.example). Variables already set in your shell win over the file. PATH, HOME, NODE_*,
+GIT_*, LD_*, DYLD_* and shell-startup variables are ignored in the file.
 
 Environment:
   ANTHROPIC_API_KEY     needed for agent "claude"
@@ -61,6 +62,12 @@ if [[ -f "$env_file" ]]; then
     line="${line%$'\r'}"
     [[ "$line" =~ ^[[:space:]]*([A-Za-z_][A-Za-z0-9_]*)=(.*)$ ]] || continue
     k="${BASH_REMATCH[1]}"; v="${BASH_REMATCH[2]}"
+    # A .env can arrive from elsewhere (a teammate, a cloned repo); these would turn it into code
+    # execution in the node/git/gh children, so they can only come from your own shell.
+    case "$k" in
+      PATH|HOME|IFS|ENV|BASH_ENV|SHELLOPTS|PS4|PROMPT_COMMAND|NODE_*|LD_*|DYLD_*|GIT_*)
+        echo "ignoring $k in $env_file (set it in your shell if you mean it)" >&2; continue ;;
+    esac
     v="${v#\"}"; v="${v%\"}"; v="${v#\'}"; v="${v%\'}"
     [[ -n "${!k:-}" ]] || export "$k=$v"
   done < "$env_file"

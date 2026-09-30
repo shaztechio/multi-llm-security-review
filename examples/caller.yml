@@ -32,13 +32,13 @@ on:
         type: boolean
         default: true
       openrouter:
-        description: "OpenRouter (experimental; needs a model below)"
+        description: "OpenRouter (experimental)"
         type: boolean
         default: false
       openrouter-model:
         description: "OpenRouter model slug, e.g. vendor/model"
         type: string
-        default: ""
+        default: "z-ai/glm-5.3"
       draft:
         description: "Open PRs as drafts"
         type: boolean

@@ -38,7 +38,7 @@ If you copied an older `caller.yml`, add those two permissions and the `upload-s
 |---|---|---|
 | `anthropic` / `openai` | `true` | Which agents to run. |
 | `openrouter` | `false` | Also run an OpenRouter model (experimental, see [OpenRouter](#openrouter)). |
-| `openrouter-model` | none | OpenRouter model slug; required when `openrouter` is on. |
+| `openrouter-model` | `z-ai/glm-5.3` | OpenRouter model slug. |
 | `draft` | `true` | Open PRs as drafts. |
 | `upload-sarif` | `true` | Upload findings to code scanning. Untick on private repos without GitHub Code Security. |
 | `base-branch` | repo default | Branch to review and target. |
@@ -96,7 +96,7 @@ Gemini CLI was removed: its model refused to do vulnerability review of a reposi
 
 ## OpenRouter
 
-Opt-in and experimental. Tick `openrouter` and set `openrouter-model` (a slug like `vendor/model`) to run
+Opt-in and experimental. Tick `openrouter` and optionally set `openrouter-model` (default `z-ai/glm-5.3`) to run
 that model through Claude Code, pointed at OpenRouter's Anthropic-compatible endpoint with the same
 edit-only tools. The PR, branch and code scanning category are named `openrouter`. One model per run.
 
@@ -119,7 +119,7 @@ AGENTS=claude ANTHROPIC_API_KEY=... node scripts/security-review.mjs path/to/rep
 | `AGENTS` | `claude codex` | Space-separated. Agents without a CLI or key are skipped. |
 | `BASE_BRANCH` | origin's default branch | |
 | `CLAUDE_MODEL` / `CODEX_MODEL` | CLI default | |
-| `OPENROUTER_MODEL` | none | Required for the `openrouter` agent (not in the default `AGENTS`). |
+| `OPENROUTER_MODEL` | `z-ai/glm-5.3` | Model for the `openrouter` agent (which is not in the default `AGENTS`). |
 | `DRAFT` | `1` | `0` for ready-for-review PRs. |
 | `REPORT_DIR` | `security-reviews` | Where the report is committed. |
 | `AGENT_TIMEOUT_MIN` | `60` | |

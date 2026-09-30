@@ -22,13 +22,13 @@
 // Requires Node 18+, git, gh (authenticated), and whichever agent CLIs you want to run:
 //   claude  (npm i -g @anthropic-ai/claude-code)   needs ANTHROPIC_API_KEY
 //   codex   (npm i -g @openai/codex)               needs OPENAI_API_KEY
-//   openrouter  runs the claude CLI against OpenRouter; needs OPENROUTER_API_KEY and OPENROUTER_MODEL
+//   openrouter  runs the claude CLI against OpenRouter; needs OPENROUTER_API_KEY
 //
 // Optional env:
 //   AGENTS="claude codex"          which agents to run (add "openrouter" to opt in)
 //   BASE_BRANCH=main               branch to review (default: origin's default branch)
 //   CLAUDE_MODEL / CODEX_MODEL   override each agent's model
-//   OPENROUTER_MODEL=vendor/model  OpenRouter model slug (required for the openrouter agent)
+//   OPENROUTER_MODEL=vendor/model  OpenRouter model slug (default z-ai/glm-5.3)
 //   REPORT_DIR=security-reviews    where the findings file is committed in the PR
 //   DRAFT=1                        open PRs as drafts (0 to disable)
 //   AGENT_TIMEOUT_MIN=60           kill an agent that runs longer than this
@@ -42,6 +42,7 @@ import { dirname, extname, isAbsolute, join, relative, resolve } from "node:path
 
 const env = process.env;
 const AGENTS = (env.AGENTS ?? "claude codex").split(/\s+/).filter(Boolean);
+const OPENROUTER_MODEL = env.OPENROUTER_MODEL || "z-ai/glm-5.3";
 const REPORT_DIR = env.REPORT_DIR ?? "security-reviews";
 const DRAFT = (env.DRAFT ?? "1") === "1";
 const TIMEOUT_MS = Number(env.AGENT_TIMEOUT_MIN ?? 60) * 60_000;
@@ -106,19 +107,18 @@ const AGENT_DEFS = {
   openrouter: {
     bin: "claude",
     key: "OPENROUTER_API_KEY",
-    requires: ["OPENROUTER_MODEL"],
     extraEnv: () => ({
       ANTHROPIC_BASE_URL: "https://openrouter.ai/api",
       ANTHROPIC_AUTH_TOKEN: env.OPENROUTER_API_KEY,
       ANTHROPIC_API_KEY: "", // must be empty so Claude Code uses the auth token
-      ANTHROPIC_MODEL: env.OPENROUTER_MODEL,
-      ANTHROPIC_SMALL_FAST_MODEL: env.OPENROUTER_MODEL,
+      ANTHROPIC_MODEL: OPENROUTER_MODEL,
+      ANTHROPIC_SMALL_FAST_MODEL: OPENROUTER_MODEL,
     }),
     args: () => [
       "-p", PROMPT,
       "--permission-mode", "acceptEdits",
       "--allowedTools", "Read,Edit,Write,Glob,Grep",
-      "--model", env.OPENROUTER_MODEL,
+      "--model", OPENROUTER_MODEL,
     ],
   },
 };
@@ -329,8 +329,6 @@ async function main() {
     try { bin = resolveBin(def.bin); } catch (err) { log(agent, `${err.message}, skipping`); continue; }
     if (!bin) { log(agent, `'${def.bin}' not installed, skipping`); continue; }
     if (!env[def.key]) { log(agent, `${def.key} not set, skipping`); continue; }
-    const unset = (def.requires ?? []).find((v) => !env[v]);
-    if (unset) { log(agent, `${unset} not set, skipping`); continue; }
     git("worktree", "add", "--quiet", "-b", `security-review/${agent}-${STAMP}`, join(runDir, agent), `origin/${base}`);
     ctx.bins[agent] = bin;
     ready.push(agent);

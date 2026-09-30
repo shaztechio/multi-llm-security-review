@@ -41,13 +41,13 @@ on:
         type: boolean
         default: true
       openrouter:
-        description: "Run an OpenRouter model (via Claude Code); needs openrouter-model. Experimental."
+        description: "Run an OpenRouter model (via Claude Code); see openrouter-model. Experimental."
         type: boolean
         default: false
       openrouter-model:
-        description: "OpenRouter model slug, e.g. vendor/model (required when openrouter is on)"
+        description: "OpenRouter model slug, e.g. vendor/model"
         type: string
-        default: ""
+        default: "z-ai/glm-5.3"
       draft:
         description: "Open PRs as drafts"
         type: boolean
@@ -101,7 +101,6 @@ jobs:
           ANTHROPIC: ${{ inputs.anthropic }}
           OPENAI: ${{ inputs.openai }}
           OPENROUTER: ${{ inputs.openrouter }}
-          OPENROUTER_MODEL: ${{ inputs.openrouter-model }}
           HAS_ANTHROPIC_KEY: ${{ secrets.ANTHROPIC_API_KEY != '' }}
           HAS_OPENAI_KEY: ${{ secrets.OPENAI_API_KEY != '' }}
           HAS_OPENROUTER_KEY: ${{ secrets.OPENROUTER_API_KEY != '' }}
@@ -118,10 +117,6 @@ jobs:
           }
           pick "$ANTHROPIC" "$HAS_ANTHROPIC_KEY" claude ANTHROPIC_API_KEY
           pick "$OPENAI"    "$HAS_OPENAI_KEY"    codex  OPENAI_API_KEY
-          if [[ "$OPENROUTER" == true && -z "$OPENROUTER_MODEL" ]]; then
-            echo "::error::openrouter is ticked but openrouter-model is empty."
-            exit 1
-          fi
           pick "$OPENROUTER" "$HAS_OPENROUTER_KEY" openrouter OPENROUTER_API_KEY
           if [[ ${#missing[@]} -gt 0 ]]; then
             for s in "${missing[@]}"; do

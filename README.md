@@ -37,6 +37,8 @@ If you copied an older `caller.yml`, add those two permissions and the `upload-s
 | Input | Default | Notes |
 |---|---|---|
 | `anthropic` / `openai` | `true` | Which agents to run. |
+| `openrouter` | `false` | Also run an OpenRouter model (experimental, see [OpenRouter](#openrouter)). |
+| `openrouter-model` | none | OpenRouter model slug; required when `openrouter` is on. |
 | `draft` | `true` | Open PRs as drafts. |
 | `upload-sarif` | `true` | Upload findings to code scanning. Untick on private repos without GitHub Code Security. |
 | `base-branch` | repo default | Branch to review and target. |
@@ -50,7 +52,7 @@ To pin a release, set both `uses: shaztechio/multi-llm-security-review/.github/w
 
 ## API keys
 
-Set `ANTHROPIC_API_KEY` and/or `OPENAI_API_KEY` as secrets **in each calling repo**
+Set `ANTHROPIC_API_KEY`, `OPENAI_API_KEY` and/or `OPENROUTER_API_KEY` as secrets **in each calling repo**
 (only for the providers you tick). They reach the workflow through `secrets: inherit`.
 
 Never add them to this repo:
@@ -88,8 +90,20 @@ report, pushes, and runs `gh pr create`. Agents never commit or push themselves.
 |---|---|---|
 | Claude Code | `claude -p … --permission-mode acceptEdits --allowedTools Read,Edit,Write,Glob,Grep` | Edits only, no shell (so it can't run tests). |
 | Codex | `openai/codex-action` (`:workspace` profile, `drop-sudo`) | Workspace-write sandbox; the action sets up user namespaces on GitHub runners. |
+| OpenRouter | `claude -p …` with `ANTHROPIC_BASE_URL=https://openrouter.ai/api` | Same as Claude Code. Opt-in; see below. |
 
 Gemini CLI was removed: its model refused to do vulnerability review of a repository, even when framed defensively.
+
+## OpenRouter
+
+Opt-in and experimental. Tick `openrouter` and set `openrouter-model` (a slug like `vendor/model`) to run
+that model through Claude Code, pointed at OpenRouter's Anthropic-compatible endpoint with the same
+edit-only tools. The PR, branch and code scanning category are named `openrouter`. One model per run.
+
+- The model must support tool use. If it doesn't write a report with a Coverage section, no PR is opened.
+- Use an OpenRouter key with a spend limit; there is no budget cap here.
+- Not yet verified against every Claude Code release. Existing agents are unaffected.
+- Locally: `AGENTS=openrouter OPENROUTER_API_KEY=... OPENROUTER_MODEL=vendor/model node scripts/security-review.mjs`.
 
 ## Run locally
 
@@ -105,6 +119,7 @@ AGENTS=claude ANTHROPIC_API_KEY=... node scripts/security-review.mjs path/to/rep
 | `AGENTS` | `claude codex` | Space-separated. Agents without a CLI or key are skipped. |
 | `BASE_BRANCH` | origin's default branch | |
 | `CLAUDE_MODEL` / `CODEX_MODEL` | CLI default | |
+| `OPENROUTER_MODEL` | none | Required for the `openrouter` agent (not in the default `AGENTS`). |
 | `DRAFT` | `1` | `0` for ready-for-review PRs. |
 | `REPORT_DIR` | `security-reviews` | Where the report is committed. |
 | `AGENT_TIMEOUT_MIN` | `60` | |

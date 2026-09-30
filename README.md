@@ -47,8 +47,8 @@ If you copied an older `caller.yml`, add those two permissions and the `upload-s
 | `agent-timeout-minutes` | `60` | Kills an agent that runs longer. Keep under 105 (the job limit is 120). |
 | `tool-repository` / `tool-ref` | this repo / `main` | Where the script is fetched from. Keep `tool-ref` in step with the `@ref` on the `uses:` line. |
 
-To pin a release, set both `uses: shaztechio/multi-llm-security-review/.github/workflows/security-review.yml@v1`
-**and** `tool-ref: v1`.
+To pin a release, set both `uses: shaztechio/multi-llm-security-review/.github/workflows/security-review.yml@1.0.0`
+**and** `tool-ref: 1.0.0`.
 
 ## API keys
 

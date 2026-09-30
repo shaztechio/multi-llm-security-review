@@ -47,7 +47,7 @@
 
 import { spawn, execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { createWriteStream, existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { createWriteStream, lstatSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, extname, isAbsolute, join, relative, resolve } from "node:path";
 import { summarizeStreamLine } from "./stream-summary.mjs";
@@ -170,6 +170,20 @@ const AGENT_DEFS = {
 
 const log = (agent, msg) => console.log(`[${agent}] ${msg}`);
 
+// Credentials that must never reach an agent subprocess: the token that can push to the repo and
+// open PRs, and every provider key except the one that agent needs. The agent reads a repository
+// whose contents it did not write, so a prompt injection there must not be able to pick up another
+// provider's key or a write token and copy it into the report, the SARIF or a fixed file.
+const PROVIDER_KEYS = new Set(Object.values(AGENT_DEFS).map((d) => d.key));
+const PUSH_TOKEN_VARS = ["GH_TOKEN", "GITHUB_TOKEN", "GH_ENTERPRISE_TOKEN", "GITHUB_ENTERPRISE_TOKEN"];
+
+function agentEnv(def) {
+  const childEnv = { ...env };
+  for (const k of PROVIDER_KEYS) if (k !== def.key) delete childEnv[k];
+  for (const k of PUSH_TOKEN_VARS) delete childEnv[k];
+  return { ...childEnv, ...(def.extraEnv?.() ?? {}) };
+}
+
 function sh(cmd, args, opts = {}) {
   return execFileSync(cmd, args, { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], ...opts }).trim();
 }
@@ -178,11 +192,14 @@ function sh(cmd, args, opts = {}) {
 // On Windows, npm-global CLIs are .cmd shims that spawn() can't run without shell: true (which
 // would shell-parse the prompt), so run the shim's target JS entry point with this node instead.
 function resolveBin(bin) {
+  // Look the name up from a neutral directory: where.exe searches the current directory before
+  // PATH, so a `claude.exe` sitting in the repo under review would otherwise be the one that runs.
+  const lookupOpts = { cwd: tmpdir() };
   if (process.platform !== "win32") {
-    try { sh("which", [bin]); return { cmd: bin, prefix: [] }; } catch { return null; }
+    try { sh("which", [bin], lookupOpts); return { cmd: bin, prefix: [] }; } catch { return null; }
   }
   let hits;
-  try { hits = sh("where", [bin]).split(/\r?\n/).filter(Boolean); } catch { return null; }
+  try { hits = sh("where", [bin], lookupOpts).split(/\r?\n/).filter(Boolean); } catch { return null; }
   const exe = hits.find((p) => extname(p).toLowerCase() === ".exe");
   if (exe) return { cmd: exe, prefix: [] };
   const cmd = hits.find((p) => extname(p).toLowerCase() === ".cmd");
@@ -193,10 +210,10 @@ function resolveBin(bin) {
 }
 
 // Run an agent CLI, streaming stdout/stderr to a log file. Resolves with the exit code.
-function runCli(cmd, args, { cwd, logPath, extraEnv = {}, onStdoutLine }) {
+function runCli(cmd, args, { cwd, logPath, childEnv = env, onStdoutLine }) {
   return new Promise((resolveP) => {
     const out = createWriteStream(logPath);
-    const child = spawn(cmd, args, { cwd, env: { ...env, ...extraEnv }, stdio: ["ignore", "pipe", "pipe"] });
+    const child = spawn(cmd, args, { cwd, env: childEnv, stdio: ["ignore", "pipe", "pipe"] });
     child.stdout.pipe(out, { end: false });
     child.stderr.pipe(out, { end: false });
     if (onStdoutLine) {
@@ -235,7 +252,15 @@ function runCli(cmd, args, { cwd, logPath, extraEnv = {}, onStdoutLine }) {
 // repo-relative URIs, a startLine on every location, and results without a location dropped.
 function exportSarif(agent, wt, ctx) {
   const src = join(wt, SARIF_FILE);
-  if (!existsSync(src)) { log(agent, "no SARIF written"); return; }
+  // lstat, not stat/existsSync: an agent with a shell could leave a symlink here, and following it
+  // would read a file from outside the worktree into an artifact that leaves the machine.
+  const srcStat = lstatSync(src, { throwIfNoEntry: false });
+  if (!srcStat) { log(agent, "no SARIF written"); return; }
+  if (!srcStat.isFile()) {
+    log(agent, `${SARIF_FILE} is not a regular file, skipping it`);
+    rmSync(src, { force: true, recursive: true });
+    return;
+  }
   let sarif;
   try {
     sarif = JSON.parse(readFileSync(src, "utf8"));
@@ -302,7 +327,7 @@ async function runAgent(agent, ctx) {
   } else {
     log(agent, `reviewing (log: ${logPath})`);
     const code = await runCli(ctx.bins[agent].cmd, [...ctx.bins[agent].prefix, ...def.args()], {
-      cwd: wt, logPath, extraEnv: def.extraEnv?.(),
+      cwd: wt, logPath, childEnv: agentEnv(def),
       onStdoutLine: STREAM_LOGS && STREAMS.has(agent)
         // Claude Code's cost figure is an estimate at Claude's prices, so it is only shown for the claude agent.
         ? (line) => { const summary = summarizeStreamLine(line, { cost: agent === "claude" }); if (summary) log(agent, summary); }
@@ -314,7 +339,14 @@ async function runAgent(agent, ctx) {
   exportSarif(agent, wt, ctx); // before git add -A, so the SARIF is never committed
 
   const report = join(wt, REPORT_FILE);
-  if (!existsSync(report) || statSync(report).size === 0) {
+  // lstat, not stat: a symlink left here would be moved into the repo as the report, and its
+  // target read into the PR body, disclosing a file from outside the worktree (a runner's
+  // credentials, the checkout's .git/config) to everyone who can see the PR.
+  const reportStat = lstatSync(report, { throwIfNoEntry: false });
+  if (reportStat && !reportStat.isFile()) {
+    throw new Error(`${REPORT_FILE} is not a regular file, so it is not a report; not opening a PR (see ${logPath})`);
+  }
+  if (!reportStat || reportStat.size === 0) {
     throw new Error(`no findings report written, so the review did not complete; not opening a PR (see ${logPath})`);
   }
 
@@ -409,8 +441,9 @@ async function main() {
   // Preflight, then create worktrees one at a time (parallel `git worktree add` races on git's lock).
   const ready = [];
   for (const agent of AGENTS) {
+    // hasOwn, not a bare lookup: AGENTS="constructor" would otherwise resolve to Object.prototype's.
+    if (!Object.hasOwn(AGENT_DEFS, agent)) { log(agent, "unknown agent, skipping"); continue; }
     const def = AGENT_DEFS[agent];
-    if (!def) { log(agent, "unknown agent, skipping"); continue; }
     const preparedDir = env[`PREPARED_${agent.toUpperCase()}_WORKTREE`];
     if (preparedDir) {
       ctx.prepared[agent] = resolve(preparedDir);

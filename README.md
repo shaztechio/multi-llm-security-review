@@ -30,7 +30,9 @@ findings are also uploaded to code scanning (see [Code scanning](#code-scanning)
 
 The workflow runs on demand only (`workflow_dispatch`). The caller grants `contents: write` and
 `pull-requests: write`, plus `security-events: write` and `actions: read` for the code scanning upload.
-If you copied an older `caller.yml`, add those two permissions and the `upload-sarif` input.
+If you copied an older `caller.yml`, add those two permissions and the `upload-sarif` input. The workflow
+declares exactly these permissions per job, and a reusable workflow can't request more than its caller
+grants, so a caller without them now fails to start rather than failing at the SARIF upload.
 
 ### Inputs
 
@@ -47,6 +49,7 @@ If you copied an older `caller.yml`, add those two permissions and the `upload-s
 | `draft` | `true` | Open PRs as drafts. |
 | `upload-sarif` | `true` | Upload findings to code scanning. Untick on private repos without GitHub Code Security. |
 | `base-branch` | repo default | Branch to review and target. |
+| `claude-cli-version` | `2.1.260` | Exact `@anthropic-ai/claude-code` version installed for the `claude` and `openrouter` agents. Pinned so a compromised release can't run with your keys; bump it deliberately. |
 | `claude-model` / `codex-model` | CLI default | Model override per agent. |
 | `codex-effort` | `medium` | Codex reasoning effort. |
 | `agent-timeout-minutes` | `60` | Kills an agent that runs longer. Keep under 105 (the job limit is 120). |

@@ -29,6 +29,8 @@
 //   BASE_BRANCH=main               branch to review (default: origin's default branch)
 //   CLAUDE_MODEL / CODEX_MODEL   override each agent's model
 //   OPENROUTER_MODEL=vendor/model  OpenRouter model slug (default z-ai/glm-5.3)
+//   OPENROUTER_MAX_OUTPUT_TOKENS=16000   per-request output cap (Claude Code's default for an unknown model is 32000)
+//   OPENROUTER_MAX_CONTEXT_TOKENS=<n>    the model's real context window (default: Claude Code assumes 200k)
 //   REPORT_DIR=security-reviews    where the findings file is committed in the PR
 //   DRAFT=1                        open PRs as drafts (0 to disable)
 //   PR_TITLE_PREFIX="fix(security)"  Conventional Commit type/scope for PR titles and commits
@@ -118,6 +120,13 @@ const AGENT_DEFS = {
       ANTHROPIC_API_KEY: "", // must be empty so Claude Code uses the auth token
       ANTHROPIC_MODEL: OPENROUTER_MODEL,
       ANTHROPIC_SMALL_FAST_MODEL: OPENROUTER_MODEL,
+      // OpenRouter reserves credit per request from the output cap times the model's price, plus
+      // requests still in flight, and answers 402 when that exceeds the balance. Claude Code asks for
+      // 32000 output tokens for a model it does not know, so ask for less: a review writes files in
+      // a few thousand tokens at a time.
+      CLAUDE_CODE_MAX_OUTPUT_TOKENS: env.OPENROUTER_MAX_OUTPUT_TOKENS || "16000",
+      // Claude Code does not know these model ids and assumes a 200k window; say so when the real one is known.
+      ...(env.OPENROUTER_MAX_CONTEXT_TOKENS ? { CLAUDE_CODE_MAX_CONTEXT_TOKENS: env.OPENROUTER_MAX_CONTEXT_TOKENS } : {}),
     }),
     args: () => [
       "-p", PROMPT,

@@ -39,6 +39,8 @@ If you copied an older `caller.yml`, add those two permissions and the `upload-s
 | `anthropic` / `openai` | `true` | Which agents to run. |
 | `openrouter` | `false` | Also run an OpenRouter model (experimental, see [OpenRouter](#openrouter)). |
 | `openrouter-model` | `z-ai/glm-5.3` | OpenRouter model slug. |
+| `openrouter-max-output-tokens` | `16000` | Output cap per request. OpenRouter reserves credit from it, so lower needs less balance. |
+| `openrouter-max-context-tokens` | Claude Code's 200k | The model's real context window, if you know it. |
 | `draft` | `true` | Open PRs as drafts. |
 | `upload-sarif` | `true` | Upload findings to code scanning. Untick on private repos without GitHub Code Security. |
 | `base-branch` | repo default | Branch to review and target. |
@@ -102,6 +104,10 @@ edit-only tools. The PR, branch and code scanning category are named `openrouter
 
 - The model must support tool use. If it doesn't write a report with a Coverage section, no PR is opened.
 - Use an OpenRouter key with a spend limit; there is no budget cap here.
+- OpenRouter answers `402 … would exceed your available credits` when a request's reserved cost (output cap
+  times price, plus requests in flight) is more than the balance. Add credits, or lower `openrouter-max-output-tokens`.
+- Claude Code does not recognise most OpenRouter model ids and warns `unrecognized_model`; it then assumes a
+  200k context window. That is harmless, and `openrouter-max-context-tokens` corrects it.
 - Not yet verified against every Claude Code release. Existing agents are unaffected.
 - Locally: `AGENTS=openrouter OPENROUTER_API_KEY=... OPENROUTER_MODEL=vendor/model node scripts/security-review.mjs`.
 
@@ -120,6 +126,7 @@ AGENTS=claude ANTHROPIC_API_KEY=... node scripts/security-review.mjs path/to/rep
 | `BASE_BRANCH` | origin's default branch | |
 | `CLAUDE_MODEL` / `CODEX_MODEL` | CLI default | |
 | `OPENROUTER_MODEL` | `z-ai/glm-5.3` | Model for the `openrouter` agent (which is not in the default `AGENTS`). |
+| `OPENROUTER_MAX_OUTPUT_TOKENS` / `OPENROUTER_MAX_CONTEXT_TOKENS` | `16000` / unset | Passed to Claude Code as `CLAUDE_CODE_MAX_OUTPUT_TOKENS` / `CLAUDE_CODE_MAX_CONTEXT_TOKENS`. |
 | `DRAFT` | `1` | `0` for ready-for-review PRs. |
 | `PR_TITLE_PREFIX` | `fix(security)` | PR titles and commits read `<prefix>: apply <agent> security review findings`, so repos that check Conventional Commit titles accept them. |
 | `REPORT_DIR` | `security-reviews` | Where the report is committed. |

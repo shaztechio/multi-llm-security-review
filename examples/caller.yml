@@ -64,5 +64,6 @@ jobs:
       draft: ${{ inputs.draft }}
       upload-sarif: ${{ inputs.upload-sarif }}
       # claude-model: claude-sonnet-4-6
+      # claude-cli-version: 2.1.260   # exact version; bump deliberately
       # tool-ref: main   # keep in step with the @ref on the uses: line
     secrets: inherit

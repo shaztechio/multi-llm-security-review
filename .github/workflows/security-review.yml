@@ -80,6 +80,10 @@ on:
         description: "Branch to review (default: the repo's default branch)"
         type: string
         default: ""
+      claude-cli-version:
+        description: "Exact version of @anthropic-ai/claude-code to install (claude and openrouter agents). Not a range: bump it deliberately"
+        type: string
+        default: "2.1.260"
       claude-model:
         type: string
         default: ""
@@ -113,6 +117,7 @@ on:
 jobs:
   plan:
     runs-on: ubuntu-latest
+    permissions: {} # only reads inputs and writes a job output
     outputs:
       agents: ${{ steps.pick.outputs.agents }}
     steps:
@@ -153,6 +158,13 @@ jobs:
   review:
     needs: plan
     runs-on: ubuntu-latest
+    # A reusable workflow can only narrow what its caller grants, so a caller that grants less than this
+    # fails to start. examples/caller.yml grants exactly this.
+    permissions:
+      contents: write        # push the review branch
+      pull-requests: write   # gh pr create
+      security-events: write # upload-sarif
+      actions: read          # upload-sarif on private repos
     timeout-minutes: 120 # hard ceiling; agent-timeout-minutes is the per-agent limit
     strategy:
       fail-fast: false
@@ -163,6 +175,9 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          # The agents run in worktrees of this checkout and can read its .git/config, so the token must not
+          # be stored there. security-review.mjs passes GH_TOKEN to each fetch and push instead.
+          persist-credentials: false
 
       - name: Check out security-review tool
         uses: actions/checkout@v4
@@ -178,9 +193,15 @@ jobs:
           node-version: 22
 
       - name: Install ${{ matrix.agent }} CLI
+        # Values go through the environment, never through ${{ }} into the script body.
+        env:
+          AGENT: ${{ matrix.agent }}
+          CLI_VERSION: ${{ inputs.claude-cli-version }}
         run: |
-          case "${{ matrix.agent }}" in
-            claude|openrouter) npm install -g @anthropic-ai/claude-code ;;
+          case "$AGENT" in
+            claude|openrouter)
+              [[ "$CLI_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "::error::claude-cli-version must be an exact version like 2.1.260"; exit 1; }
+              npm install -g "@anthropic-ai/claude-code@$CLI_VERSION" ;;
             codex)  ;; # installed by openai/codex-action
           esac
 
@@ -193,7 +214,7 @@ jobs:
         env:
           BASE_BRANCH: ${{ inputs.base-branch || github.event.repository.default_branch }}
         run: |
-          git fetch --quiet origin
+          # No fetch here: the checkout above (fetch-depth: 0) already has every branch, and credentials are not persisted.
           git worktree add --quiet --detach "$RUNNER_TEMP/codex-wt" "origin/$BASE_BRANCH"
           node .security-review-tool/scripts/security-review.mjs --print-prompt > "$RUNNER_TEMP/codex-prompt.md"
 

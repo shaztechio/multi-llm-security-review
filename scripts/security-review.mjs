@@ -143,6 +143,10 @@ const AGENT_DEFS = {
       "--permission-mode", "acceptEdits",
       "--allowedTools", "Read,Edit,Write,Glob,Grep",
       "--model", OPENROUTER_MODEL,
+      // Only these tools exist for the model. --allowedTools merely pre-approves; every other tool stays
+      // available, and this model reached for Agent (sub-agents running in parallel, each holding a request
+      // in flight, which is what OpenRouter's 402 "in-flight requests" refers to) and Bash (denied, so wasted turns).
+      "--tools", "Read,Edit,Write,Glob,Grep",
       ...(STREAM_LOGS ? STREAM_FLAGS : []),
     ],
   },
@@ -286,7 +290,8 @@ async function runAgent(agent, ctx) {
     const code = await runCli(ctx.bins[agent].cmd, [...ctx.bins[agent].prefix, ...def.args()], {
       cwd: wt, logPath, extraEnv: def.extraEnv?.(),
       onStdoutLine: STREAM_LOGS && STREAMS.has(agent)
-        ? (line) => { const summary = summarizeStreamLine(line); if (summary) log(agent, summary); }
+        // Claude Code's cost figure is an estimate at Claude's prices, so it is only shown for the claude agent.
+        ? (line) => { const summary = summarizeStreamLine(line, { cost: agent === "claude" }); if (summary) log(agent, summary); }
         : undefined,
     });
     if (code !== 0) log(agent, `agent exited with code ${code}; see ${logPath}`);

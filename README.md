@@ -107,6 +107,8 @@ edit-only tools. The PR, branch and code scanning category are named `openrouter
 
 - The model must support tool use. If it doesn't write a report with a Coverage section, no PR is opened.
 - Use an OpenRouter key with a spend limit; there is no budget cap here.
+- Add the `:floor` suffix to the model slug you choose (for example `z-ai/glm-5.3:floor`) and OpenRouter routes
+  to the cheapest provider for that model.
 - **Cost is mostly input tokens.** An agent re-sends its whole conversation every turn, so a whole-repo review is
   millions of input tokens and only tens of thousands of output tokens. The estimate Claude Code prints is at
   Claude's prices, not the model's. Caching is what brings input down (Z.AI reads cost about a fifth), and it only

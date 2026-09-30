@@ -56,6 +56,14 @@ on:
         description: "The OpenRouter model's real context window, if known (blank = Claude Code assumes 200k)"
         type: string
         default: ""
+      openrouter-auto-compact-window:
+        description: "Compact the OpenRouter agent's conversation at this many tokens, 100000-1000000 (blank = 100000). Smaller = cheaper turns."
+        type: string
+        default: ""
+      openrouter-max-turns:
+        description: "Stop the OpenRouter agent after this many turns (blank = no limit). Hitting it fails the run; no PR if the report is not written yet."
+        type: string
+        default: ""
       stream-logs:
         description: "Print one progress line per tool call (tool and path only) to the job log for the Claude Code based agents. The job log of a public repo is public."
         type: boolean
@@ -226,6 +234,8 @@ jobs:
           STREAM_LOGS: ${{ inputs.stream-logs && '1' || '0' }}
           OPENROUTER_MAX_OUTPUT_TOKENS: ${{ inputs.openrouter-max-output-tokens }}
           OPENROUTER_MAX_CONTEXT_TOKENS: ${{ inputs.openrouter-max-context-tokens }}
+          OPENROUTER_AUTO_COMPACT_WINDOW: ${{ inputs.openrouter-auto-compact-window }}
+          OPENROUTER_MAX_TURNS: ${{ inputs.openrouter-max-turns }}
           SARIF_DIR: ${{ runner.temp }}/sarif
           PREPARED_CODEX_WORKTREE: ${{ matrix.agent == 'codex' && format('{0}/codex-wt', runner.temp) || '' }}
         shell: bash # implies -o pipefail, so a failing script fails the job despite tee

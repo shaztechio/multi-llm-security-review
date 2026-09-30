@@ -31,6 +31,10 @@
 //   OPENROUTER_MODEL=vendor/model  OpenRouter model slug (default z-ai/glm-5.3)
 //   OPENROUTER_MAX_OUTPUT_TOKENS=16000   per-request output cap (Claude Code's default for an unknown model is 32000)
 //   OPENROUTER_MAX_CONTEXT_TOKENS=<n>    the model's real context window (default: Claude Code assumes 200k)
+//   OPENROUTER_AUTO_COMPACT_WINDOW=100000  compact the conversation at this many tokens (100000 to 1000000). Every turn
+//                                        re-sends the conversation, so a smaller window means cheaper turns
+//   OPENROUTER_MAX_TURNS=<n>             stop after this many agent turns (none by default). Hitting it ends the
+//                                        run with an error and, if the report was not written yet, no PR
 //   REPORT_DIR=security-reviews    where the findings file is committed in the PR
 //   DRAFT=1                        open PRs as drafts (0 to disable)
 //   PR_TITLE_PREFIX="fix(security)"  Conventional Commit type/scope for PR titles and commits
@@ -42,6 +46,7 @@
 //                                  (never committed; the workflow uploads them to code scanning)
 
 import { spawn, execFileSync } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import { createWriteStream, existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, extname, isAbsolute, join, relative, resolve } from "node:path";
@@ -59,6 +64,9 @@ const STREAM_LOGS = (env.STREAM_LOGS ?? "0") === "1";
 // prints live to the job log.
 const STREAMS = new Set(["claude", "openrouter"]);
 const STREAM_FLAGS = ["--output-format", "stream-json", "--verbose"];
+// One id for every request of this run. OpenRouter's prompt cache only helps if each turn lands on the same
+// provider, and its docs say a session id keeps routing consistent (x-session-id header).
+const SESSION_ID = `bunyi-review-${env.GITHUB_RUN_ID ?? randomUUID()}-${env.GITHUB_RUN_ATTEMPT ?? "1"}`;
 const REPORT_FILE = ".security-review.md"; // agents write here, inside their worktree
 const SARIF_FILE = ".security-review.sarif";
 
@@ -137,6 +145,11 @@ const AGENT_DEFS = {
       CLAUDE_CODE_MAX_OUTPUT_TOKENS: env.OPENROUTER_MAX_OUTPUT_TOKENS || "16000",
       // Claude Code does not know these model ids and assumes a 200k window; say so when the real one is known.
       ...(env.OPENROUTER_MAX_CONTEXT_TOKENS ? { CLAUDE_CODE_MAX_CONTEXT_TOKENS: env.OPENROUTER_MAX_CONTEXT_TOKENS } : {}),
+      // Cost: with little caching, every turn pays full input price for the whole conversation, so its size
+      // is the bill. Compact earlier (the Claude Code minimum is 100000), and pin the provider per run so the
+      // model's cache (Z.AI reads cost about a fifth of input) can hit.
+      CLAUDE_CODE_AUTO_COMPACT_WINDOW: env.OPENROUTER_AUTO_COMPACT_WINDOW || "100000",
+      ANTHROPIC_CUSTOM_HEADERS: `x-session-id: ${SESSION_ID}`,
     }),
     args: () => [
       "-p", PROMPT,
@@ -147,6 +160,7 @@ const AGENT_DEFS = {
       // available, and this model reached for Agent (sub-agents running in parallel, each holding a request
       // in flight, which is what OpenRouter's 402 "in-flight requests" refers to) and Bash (denied, so wasted turns).
       "--tools", "Read,Edit,Write,Glob,Grep",
+      ...(env.OPENROUTER_MAX_TURNS ? ["--max-turns", env.OPENROUTER_MAX_TURNS] : []),
       ...(STREAM_LOGS ? STREAM_FLAGS : []),
     ],
   },

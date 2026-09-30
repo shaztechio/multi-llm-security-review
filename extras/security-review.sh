@@ -82,6 +82,7 @@ run_cli() {
       claude -p "$PROMPT" \
         --permission-mode acceptEdits \
         --allowedTools "Read,Edit,Write,Glob,Grep" \
+        --tools "Read,Edit,Write,Glob,Grep" \
         ${CLAUDE_MODEL:+--model "$CLAUDE_MODEL"} ;;
     codex)
       CODEX_API_KEY="$OPENAI_API_KEY" codex exec --full-auto \

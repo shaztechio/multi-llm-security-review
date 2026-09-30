@@ -105,8 +105,10 @@ run_agent() {
   fi
 
   cd "$wt"
-  if [[ ! -s "$REPORT_FILE" ]]; then
-    echo "[$agent] no findings report written; skipping PR (see $log)"
+  # -L first: a symlink left here would be moved into the repo as the report and its target read
+  # into the PR body, disclosing a file from outside the worktree to everyone who can see the PR.
+  if [[ -L "$REPORT_FILE" || ! -f "$REPORT_FILE" || ! -s "$REPORT_FILE" ]]; then
+    echo "[$agent] no usable findings report written; skipping PR (see $log)"
     return 0
   fi
 

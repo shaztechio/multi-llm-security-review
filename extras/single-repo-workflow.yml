@@ -94,8 +94,12 @@ jobs:
           node-version: 22
 
       - name: Install ${{ matrix.agent }} CLI
+        # The matrix value goes through the environment, not through ${{ }} expansion into the
+        # script body, so it can never be parsed as shell.
+        env:
+          AGENT: ${{ matrix.agent }}
         run: |
-          case "${{ matrix.agent }}" in
+          case "$AGENT" in
             claude) npm install -g @anthropic-ai/claude-code ;;
             codex)  npm install -g @openai/codex ;;
             gemini) npm install -g @google/gemini-cli ;;

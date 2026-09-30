@@ -1,7 +1,7 @@
 # multi-llm-security-review
 
-A reusable GitHub Actions workflow that runs **Claude Code** and **Codex** against a
-repo. Each agent reviews the whole codebase for security issues, fixes what it is confident about, and
+A reusable GitHub Actions workflow that runs **Claude Code** and **Codex** (and, opt-in, an
+**OpenRouter** model) against a repo. Each agent reviews the whole codebase for security issues, fixes what it is confident about, and
 opens its own PR with the fixes and a findings report. One PR per agent; there is no cross-model merge.
 Findings are also uploaded as SARIF to the repo's code scanning alerts, which only collaborators can see.
 

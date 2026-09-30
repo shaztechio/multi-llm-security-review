@@ -48,6 +48,14 @@ on:
         description: "OpenRouter model slug, e.g. vendor/model"
         type: string
         default: "z-ai/glm-5.3"
+      openrouter-max-output-tokens:
+        description: "Per-request output cap for the OpenRouter agent (blank = 16000). Lower reserves less credit per request."
+        type: string
+        default: ""
+      openrouter-max-context-tokens:
+        description: "The OpenRouter model's real context window, if known (blank = Claude Code assumes 200k)"
+        type: string
+        default: ""
       draft:
         description: "Open PRs as drafts"
         type: boolean
@@ -211,6 +219,8 @@ jobs:
           CODEX_MODEL:  ${{ inputs.codex-model }}
           OPENROUTER_API_KEY: ${{ matrix.agent == 'openrouter' && secrets.OPENROUTER_API_KEY || '' }}
           OPENROUTER_MODEL: ${{ inputs.openrouter-model }}
+          OPENROUTER_MAX_OUTPUT_TOKENS: ${{ inputs.openrouter-max-output-tokens }}
+          OPENROUTER_MAX_CONTEXT_TOKENS: ${{ inputs.openrouter-max-context-tokens }}
           SARIF_DIR: ${{ runner.temp }}/sarif
           PREPARED_CODEX_WORKTREE: ${{ matrix.agent == 'codex' && format('{0}/codex-wt', runner.temp) || '' }}
         shell: bash # implies -o pipefail, so a failing script fails the job despite tee

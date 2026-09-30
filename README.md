@@ -145,6 +145,19 @@ Requires Node 18+, git, an authenticated `gh`, and the CLIs you want to run
 AGENTS=claude ANTHROPIC_API_KEY=... node scripts/security-review.mjs path/to/repo
 ```
 
+The wrapper scripts check the prerequisites and your keys, then call the same script. They read keys
+from the environment or a git-ignored `.env` (copy [`.env.example`](.env.example); variables already
+set in your shell win). `AGENTS` defaults to `claude openrouter`, and `OPENROUTER_MAX_TURNS` to `60`.
+Pass `-h` / `--help` for usage.
+
+```bash
+scripts/run-local.sh [repo-path]        # Linux, macOS
+```
+
+```powershell
+.\scripts\run-local.ps1 [repo-path]     # Windows PowerShell
+```
+
 | Env var | Default | Notes |
 |---|---|---|
 | `AGENTS` | `claude codex` | Space-separated. Agents without a CLI or key are skipped. |

@@ -56,6 +56,10 @@ on:
         description: "The OpenRouter model's real context window, if known (blank = Claude Code assumes 200k)"
         type: string
         default: ""
+      stream-logs:
+        description: "Print one progress line per tool call (tool and path only) to the job log for the Claude Code based agents. The job log of a public repo is public."
+        type: boolean
+        default: false
       draft:
         description: "Open PRs as drafts"
         type: boolean
@@ -219,6 +223,7 @@ jobs:
           CODEX_MODEL:  ${{ inputs.codex-model }}
           OPENROUTER_API_KEY: ${{ matrix.agent == 'openrouter' && secrets.OPENROUTER_API_KEY || '' }}
           OPENROUTER_MODEL: ${{ inputs.openrouter-model }}
+          STREAM_LOGS: ${{ inputs.stream-logs && '1' || '0' }}
           OPENROUTER_MAX_OUTPUT_TOKENS: ${{ inputs.openrouter-max-output-tokens }}
           OPENROUTER_MAX_CONTEXT_TOKENS: ${{ inputs.openrouter-max-context-tokens }}
           SARIF_DIR: ${{ runner.temp }}/sarif

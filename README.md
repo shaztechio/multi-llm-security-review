@@ -100,7 +100,10 @@ report, pushes, and runs `gh pr create`. Agents never commit or push themselves.
 | Codex | `openai/codex-action` (`:workspace` profile, `drop-sudo`) | Workspace-write sandbox; the action sets up user namespaces on GitHub runners. |
 | OpenRouter | `claude -p …` with `ANTHROPIC_BASE_URL=https://openrouter.ai/api` | Same as Claude Code. Opt-in; see below. |
 
-Gemini CLI was removed: its model refused to do vulnerability review of a repository, even when framed defensively.
+**Gemini is not supported.** Gemini CLI was removed: the Gemini models available through the API refuse to do
+vulnerability review of a repository, even when framed defensively. The security-tuned models (Gemini 3.8 Flash
+Cyber, Gemini 4 Argon) have no public API access yet. Gemini will be revisited if either becomes available. In the
+meantime, Gemini credentials (`GEMINI_API_KEY`, `GOOGLE_API_KEY`) are still stripped from every agent's environment.
 
 ## OpenRouter
 

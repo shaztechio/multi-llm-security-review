@@ -14,7 +14,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# security-review.sh — run Claude Code, Codex and Gemini CLI headlessly against a repo,
+# security-review.sh — run Claude Code and Codex headlessly against a repo,
 # each in its own git worktree, and open one draft PR per agent with fixes + findings.
 #
 # Usage:  ./security-review.sh [path/to/repo]            (default: current dir)
@@ -22,19 +22,18 @@
 # Requires: git, gh (authenticated), and whichever agent CLIs you want to run:
 #   claude  (npm i -g @anthropic-ai/claude-code)   needs ANTHROPIC_API_KEY
 #   codex   (npm i -g @openai/codex)               needs OPENAI_API_KEY
-#   gemini  (npm i -g @google/gemini-cli)          needs GEMINI_API_KEY
 #
 # Optional env:
-#   AGENTS="claude codex gemini"   which agents to run
+#   AGENTS="claude codex"          which agents to run
 #   BASE_BRANCH=main               branch to review (default: origin's default branch)
-#   CLAUDE_MODEL / CODEX_MODEL / GEMINI_MODEL   override each agent's model
+#   CLAUDE_MODEL / CODEX_MODEL   override each agent's model
 #   REPORT_DIR=security-reviews    where the findings file is committed in the PR
 #   DRAFT=1                        open PRs as drafts (0 to disable)
 
 set -euo pipefail
 
 REPO="$(cd "${1:-.}" && git rev-parse --show-toplevel)"
-AGENTS="${AGENTS:-claude codex gemini}"
+AGENTS="${AGENTS:-claude codex}"
 REPORT_DIR="${REPORT_DIR:-security-reviews}"
 DRAFT="${DRAFT:-1}"
 STAMP="$(date +%Y%m%d-%H%M)"
@@ -68,7 +67,6 @@ preflight() {
   case "$agent" in
     claude) bin=claude; key=ANTHROPIC_API_KEY ;;
     codex)  bin=codex;  key=OPENAI_API_KEY ;;
-    gemini) bin=gemini; key=GEMINI_API_KEY ;;
     *) echo "[$agent] unknown agent, skipping"; return 1 ;;
   esac
   command -v "$bin" >/dev/null || { echo "[$agent] '$bin' not installed, skipping"; return 1; }
@@ -87,9 +85,6 @@ run_cli() {
     codex)
       CODEX_API_KEY="$OPENAI_API_KEY" codex exec --full-auto \
         ${CODEX_MODEL:+--model "$CODEX_MODEL"} "$PROMPT" ;;
-    gemini)
-      gemini -p "$PROMPT" --approval-mode auto_edit \
-        ${GEMINI_MODEL:+--model "$GEMINI_MODEL"} ;;
   esac
 }
 

@@ -34,6 +34,10 @@ If you copied an older `caller.yml`, add those two permissions and the `upload-s
 declares exactly these permissions per job, and a reusable workflow can't request more than its caller
 grants, so a caller without them now fails to start rather than failing at the SARIF upload.
 
+The calling repo must also allow Actions to open PRs: Settings → Actions → General → Workflow permissions →
+tick **Allow GitHub Actions to create and approve pull requests**. Without it `gh pr create` fails. If the box
+is greyed out, an organisation policy is blocking it; enable it under the org's Actions settings first.
+
 ### Inputs
 
 | Input | Default | Notes |

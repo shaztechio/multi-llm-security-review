@@ -43,7 +43,8 @@ is greyed out, an organisation policy is blocking it; enable it under the org's 
 
 The basic form has six options: the four providers, **Stream logs**, and **Open PRs as drafts**.
 It uses CLI-default Claude/Codex models, Gemini Argon, and `z-ai/glm-5.3:floor` for
-OpenRouter, with SARIF uploads enabled. Choose **Security review (advanced)** for model
+OpenRouter, with SARIF uploads enabled. Both example forms enable stream logs by default;
+untick **Stream logs** to disable them. Choose **Security review (advanced)** for model
 overrides, OpenRouter turn/compaction limits, or to disable SARIF
 on a private repo without GitHub Code Security. Both examples explicitly forward only
 the four provider secrets and pin the reusable workflow and tool checkout to the same

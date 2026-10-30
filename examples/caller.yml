@@ -31,6 +31,10 @@ on:
         description: "OpenAI (Codex)"
         type: boolean
         default: true
+      gemini:
+        description: "Google (Gemini Argon, experimental)"
+        type: boolean
+        default: false
       openrouter:
         description: "OpenRouter (experimental)"
         type: boolean
@@ -59,6 +63,9 @@ jobs:
     with:
       anthropic: ${{ inputs.anthropic }}
       openai: ${{ inputs.openai }}
+      gemini: ${{ inputs.gemini }}
+      # gemini-model: gemini-4-argon
+      # gemini-cli-version: 0.66.0
       openrouter: ${{ inputs.openrouter }}
       openrouter-model: ${{ inputs.openrouter-model }}
       draft: ${{ inputs.draft }}

@@ -32,6 +32,7 @@ Environment:
   ANTHROPIC_API_KEY     needed for agent "claude"
   OPENROUTER_API_KEY    needed for agent "openrouter"
   OPENAI_API_KEY        needed for agent "codex"
+  GEMINI_API_KEY        needed for agent "gemini" (Gemini CLI needs Node 20+)
   AGENTS                space-separated agents (default: "claude openrouter")
   OPENROUTER_MAX_TURNS  turn cap for openrouter (default: 60)
   SECREVIEW_ENV_FILE    use this env file instead of <repo>/.env
@@ -85,7 +86,7 @@ if ([int](node -p 'process.versions.node.split(".")[0]') -lt 18) { throw 'Node 1
 if (-not $env:AGENTS) { $env:AGENTS = 'claude openrouter' }
 if (-not $env:OPENROUTER_MAX_TURNS) { $env:OPENROUTER_MAX_TURNS = '60' }
 
-$keys = @{ claude = 'ANTHROPIC_API_KEY'; openrouter = 'OPENROUTER_API_KEY'; codex = 'OPENAI_API_KEY' }
+$keys = @{ claude = 'ANTHROPIC_API_KEY'; openrouter = 'OPENROUTER_API_KEY'; codex = 'OPENAI_API_KEY'; gemini = 'GEMINI_API_KEY' }
 foreach ($a in $env:AGENTS -split '\s+' | Where-Object { $_ }) {
   $k = $keys[$a]
   if ($k -and -not (Get-Item "env:$k" -ErrorAction SilentlyContinue).Value) { throw "$k not set" }

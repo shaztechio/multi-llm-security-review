@@ -1,7 +1,7 @@
 # multi-llm-security-review
 
 A reusable GitHub Actions workflow that runs **Claude Code** and **Codex** (and, opt-in, an
-**OpenRouter** model) against a repo. Each agent reviews the whole codebase for security issues, fixes what it is confident about, and
+**OpenRouter** model or **Gemini Argon**) against a repo. Each agent reviews the whole codebase for security issues, fixes what it is confident about, and
 opens its own PR with the fixes and a findings report. One PR per agent; there is no cross-model merge.
 Findings are also uploaded as SARIF to the repo's code scanning alerts, which only collaborators can see.
 
@@ -21,8 +21,8 @@ The same script also runs locally, so CI and local runs behave identically.
 1. Copy [`examples/caller.yml`](examples/caller.yml) to `.github/workflows/security-review.yml` in the repo
    you want reviewed.
 2. In that repo, add a secret for each provider you'll use (see [API keys](#api-keys)).
-3. In that repo, enable Settings → Actions → General → **Allow GitHub Actions to create and approve pull requests**.
-4. Actions tab → **Security review** → **Run workflow**, tick the providers, run.
+3. In that repo, enable Settings â†’ Actions â†’ General â†’ **Allow GitHub Actions to create and approve pull requests**.
+4. Actions tab â†’ **Security review** â†’ **Run workflow**, tick the providers, run.
 
 Each selected agent opens a PR on a `security-review/<agent>-<YYYYMMDD-HHMM>` branch. Its report is
 committed under `security-reviews/` and included in the PR body, truncated to 60k characters. Its
@@ -34,7 +34,7 @@ If you copied an older `caller.yml`, add those two permissions and the `upload-s
 declares exactly these permissions per job, and a reusable workflow can't request more than its caller
 grants, so a caller without them now fails to start rather than failing at the SARIF upload.
 
-The calling repo must also allow Actions to open PRs: Settings → Actions → General → Workflow permissions →
+The calling repo must also allow Actions to open PRs: Settings â†’ Actions â†’ General â†’ Workflow permissions â†’
 tick **Allow GitHub Actions to create and approve pull requests**. Without it `gh pr create` fails. If the box
 is greyed out, an organisation policy is blocking it; enable it under the org's Actions settings first.
 
@@ -43,6 +43,9 @@ is greyed out, an organisation policy is blocking it; enable it under the org's 
 | Input | Default | Notes |
 |---|---|---|
 | `anthropic` / `openai` | `true` | Which agents to run. |
+| `gemini` | `false` | Run Gemini Argon (experimental; requires `GEMINI_API_KEY`). |
+| `gemini-model` | `gemini-4-argon` | Gemini model override. |
+| `gemini-cli-version` | `0.66.0` | Exact Gemini CLI version installed in CI. |
 | `openrouter` | `false` | Also run an OpenRouter model (experimental, see [OpenRouter](#openrouter)). |
 | `openrouter-model` | `z-ai/glm-5.3` | OpenRouter model slug. |
 | `openrouter-max-output-tokens` | `16000` | Output cap per request. OpenRouter reserves credit from it, so lower needs less balance. |
@@ -64,7 +67,7 @@ To pin a release, set both `uses: shaztechio/multi-llm-security-review/.github/w
 
 ## API keys
 
-Set `ANTHROPIC_API_KEY`, `OPENAI_API_KEY` and/or `OPENROUTER_API_KEY` as secrets **in each calling repo**
+Set `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GEMINI_API_KEY` and/or `OPENROUTER_API_KEY` as secrets **in each calling repo**
 (only for the providers you tick). They reach the workflow through `secrets: inherit`.
 
 Never add them to this repo:
@@ -76,12 +79,12 @@ Never add them to this repo:
 - A run fails if a ticked provider has no key.
 
 Keep this repo public (it contains no secrets), or grant callers access under
-Settings → Actions → General → Access.
+Settings â†’ Actions â†’ General â†’ Access.
 
 ## Code scanning
 
 Each agent also writes its findings (fixed or not) as SARIF. The workflow uploads them to the calling
-repo's **Security → Code scanning** page, one category per agent (`security-review-claude` and so on),
+repo's **Security â†’ Code scanning** page, one category per agent (`security-review-claude` and so on),
 attached to the reviewed branch and commit.
 
 - Alerts are visible only to people with write or security access, not the public.
@@ -100,14 +103,29 @@ report, pushes, and runs `gh pr create`. Agents never commit or push themselves.
 
 | Agent | Command | Permissions |
 |---|---|---|
-| Claude Code | `claude -p … --permission-mode acceptEdits --allowedTools Read,Edit,Write,Glob,Grep` | Edits only, no shell (so it can't run tests). |
+| Claude Code | `claude -p â€¦ --permission-mode acceptEdits --allowedTools Read,Edit,Write,Glob,Grep` | Edits only, no shell (so it can't run tests). |
 | Codex | `openai/codex-action` (`:workspace` profile, `drop-sudo`) | Workspace-write sandbox; the action sets up user namespaces on GitHub runners. |
-| OpenRouter | `claude -p …` with `ANTHROPIC_BASE_URL=https://openrouter.ai/api` | Same as Claude Code. Opt-in; see below. |
+| Gemini Argon | `gemini --prompt … --model gemini-4-argon --approval-mode auto_edit` | File tools only; no shell, hooks or MCP. |
+| OpenRouter | `claude -p â€¦` with `ANTHROPIC_BASE_URL=https://openrouter.ai/api` | Same as Claude Code. Opt-in; see below. |
 
-**Gemini is not supported.** Gemini CLI was removed: the Gemini models available through the API refuse to do
-vulnerability review of a repository, even when framed defensively. The security-tuned models (Gemini 3.8 Flash
-Cyber, Gemini 4 Argon) have no public API access yet. Gemini will be revisited if either becomes available. In the
-meantime, Gemini credentials (`GEMINI_API_KEY`, `GOOGLE_API_KEY`) are still stripped from every agent's environment.
+## Gemini Argon
+
+Opt in with the `gemini` workflow input or `AGENTS=gemini` locally. The default model is
+[`gemini-4-argon`](https://ai.google.dev/gemini-api/docs/models/gemini-4-argon);
+override it with `gemini-model` / `GEMINI_MODEL`. Set `GEMINI_API_KEY` in the calling repo's
+secrets or your local environment. Your API account must have access to the model.
+
+Install `npm i -g @google/gemini-cli@0.66.0` for local runs (Node 20+ required).
+CI pins the CLI via `gemini-cli-version` (default `0.66.0`). Gemini CLI is not yet optimized
+for Argon, so this integration is experimental. It uses `--approval-mode auto_edit` with
+file reading, search and editing tools only. System settings disable hooks, MCP, extensions,
+skills, subagents and local `.env` loading. Like Claude Code, it cannot run tests.
+It produces a `gemini` PR, findings report, SARIF category and log artifact through the same
+publisher as the other agents. `STREAM_LOGS` applies only to Claude and OpenRouter.
+
+```bash
+AGENTS=gemini GEMINI_API_KEY=... node scripts/security-review.mjs path/to/repo
+```
 
 ## OpenRouter
 
@@ -125,7 +143,7 @@ edit-only tools. The PR, branch and code scanning category are named `openrouter
   hits when each turn goes to the same provider: the agent sends a per-run `x-session-id` for that. Check the
   Activity page of your OpenRouter account for `cached_tokens` per request. In your account's privacy settings you
   can also allow only the provider whose cache you want.
-- OpenRouter answers `402 … would exceed your available credits` when a request's reserved cost (output cap
+- OpenRouter answers `402 â€¦ would exceed your available credits` when a request's reserved cost (output cap
   times price, plus requests in flight) is more than the balance. Add credits, or lower `openrouter-max-output-tokens`.
 - Claude Code does not recognise most OpenRouter model ids and warns `unrecognized_model`; it then assumes a
   200k context window. That is harmless, and `openrouter-max-context-tokens` corrects it.
@@ -135,7 +153,7 @@ edit-only tools. The PR, branch and code scanning category are named `openrouter
 ## Live progress
 
 By default an agent's own output goes to a file (uploaded as the `security-review-<agent>-log` artifact), so the
-job log shows only `[agent] reviewing…` until the end. Tick `stream-logs` (or set `STREAM_LOGS=1` locally) to run
+job log shows only `[agent] reviewingâ€¦` until the end. Tick `stream-logs` (or set `STREAM_LOGS=1` locally) to run
 Claude Code with `--output-format stream-json --verbose` and print one line per tool call for the `claude` and
 `openrouter` agents, for example `[openrouter] Read apps/dotnet/src/Core/BackupManager.cs`, plus API retries and a
 final line with turns, time and cost. Codex already prints live through its action.
@@ -174,6 +192,7 @@ scripts/run-local.sh [repo-path]        # Linux, macOS
 |---|---|---|
 | `AGENTS` | `claude codex` | Space-separated. Agents without a CLI or key are skipped. |
 | `BASE_BRANCH` | origin's default branch | |
+| `GEMINI_MODEL` | `gemini-4-argon` | Model for the opt-in `gemini` agent. |
 | `CLAUDE_MODEL` / `CODEX_MODEL` | CLI default | |
 | `OPENROUTER_MODEL` | `z-ai/glm-5.3` | Model for the `openrouter` agent (which is not in the default `AGENTS`). |
 | `OPENROUTER_AUTO_COMPACT_WINDOW` / `OPENROUTER_MAX_TURNS` | `100000` / none | Passed to Claude Code as `CLAUDE_CODE_AUTO_COMPACT_WINDOW` / `--max-turns`. |
@@ -204,7 +223,7 @@ gh api repos/OWNER/REPO/code-scanning/sarifs -f commit_sha=$(git rev-parse origi
   agent log artifacts. Code scanning alerts stay private, but the PRs don't; use this on private repos.
 - PRs opened with `GITHUB_TOKEN` don't trigger other workflows (e.g. tests). Use a GitHub App token or a
   PAT if you need that.
-- Cost scales with repo size × number of agents. There is no budget cap; only the per-agent timeout.
+- Cost scales with repo size Ã— number of agents. There is no budget cap; only the per-agent timeout.
 
 ## License
 

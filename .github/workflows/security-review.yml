@@ -40,6 +40,17 @@ on:
         description: "Run OpenAI (Codex)"
         type: boolean
         default: true
+      gemini:
+        description: "Run Gemini Argon (experimental)"
+        type: boolean
+        default: false
+      gemini-model:
+        type: string
+        default: "gemini-4-argon"
+      gemini-cli-version:
+        description: "Exact @google/gemini-cli version; bump deliberately"
+        type: string
+        default: "0.66.0"
       openrouter:
         description: "Run an OpenRouter model (via Claude Code); see openrouter-model. Experimental."
         type: boolean
@@ -111,6 +122,8 @@ on:
         required: false
       OPENAI_API_KEY:
         required: false
+      GEMINI_API_KEY:
+        required: false
       OPENROUTER_API_KEY:
         required: false
 
@@ -125,6 +138,8 @@ jobs:
         env:
           ANTHROPIC: ${{ inputs.anthropic }}
           OPENAI: ${{ inputs.openai }}
+          GEMINI: ${{ inputs.gemini }}
+          HAS_GEMINI_KEY: ${{ secrets.GEMINI_API_KEY != '' }}
           OPENROUTER: ${{ inputs.openrouter }}
           HAS_ANTHROPIC_KEY: ${{ secrets.ANTHROPIC_API_KEY != '' }}
           HAS_OPENAI_KEY: ${{ secrets.OPENAI_API_KEY != '' }}
@@ -142,6 +157,7 @@ jobs:
           }
           pick "$ANTHROPIC" "$HAS_ANTHROPIC_KEY" claude ANTHROPIC_API_KEY
           pick "$OPENAI"    "$HAS_OPENAI_KEY"    codex  OPENAI_API_KEY
+          pick "$GEMINI" "$HAS_GEMINI_KEY" gemini GEMINI_API_KEY
           pick "$OPENROUTER" "$HAS_OPENROUTER_KEY" openrouter OPENROUTER_API_KEY
           if [[ ${#missing[@]} -gt 0 ]]; then
             for s in "${missing[@]}"; do
@@ -197,11 +213,15 @@ jobs:
         env:
           AGENT: ${{ matrix.agent }}
           CLI_VERSION: ${{ inputs.claude-cli-version }}
+          GEMINI_CLI_VERSION: ${{ inputs.gemini-cli-version }}
         run: |
           case "$AGENT" in
             claude|openrouter)
               [[ "$CLI_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "::error::claude-cli-version must be an exact version like 2.1.260"; exit 1; }
               npm install -g "@anthropic-ai/claude-code@$CLI_VERSION" ;;
+            gemini)
+              [[ "$GEMINI_CLI_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "::error::gemini-cli-version must be an exact version"; exit 1; }
+              npm install -g "@google/gemini-cli@$GEMINI_CLI_VERSION" ;;
             codex)  ;; # installed by openai/codex-action
           esac
 
@@ -248,6 +268,8 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           ANTHROPIC_API_KEY: ${{ matrix.agent == 'claude' && secrets.ANTHROPIC_API_KEY || '' }}
           # OPENAI_API_KEY is only given to openai/codex-action above, never to this step
+          GEMINI_API_KEY: ${{ matrix.agent == 'gemini' && secrets.GEMINI_API_KEY || '' }}
+          GEMINI_MODEL: ${{ inputs.gemini-model }}
           CLAUDE_MODEL: ${{ inputs.claude-model }}
           CODEX_MODEL:  ${{ inputs.codex-model }}
           OPENROUTER_API_KEY: ${{ matrix.agent == 'openrouter' && secrets.OPENROUTER_API_KEY || '' }}

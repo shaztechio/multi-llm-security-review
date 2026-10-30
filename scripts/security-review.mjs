@@ -22,6 +22,8 @@
 // Requires Node 18+, git, gh (authenticated), and whichever agent CLIs you want to run:
 //   claude  (npm i -g @anthropic-ai/claude-code)   needs ANTHROPIC_API_KEY
 //   codex   (npm i -g @openai/codex)               needs OPENAI_API_KEY
+//   gemini  (npm i -g @google/gemini-cli)            needs GEMINI_API_KEY
+//   GEMINI_MODEL=gemini-4-argon     override the Gemini model
 //   openrouter  runs the claude CLI against OpenRouter; needs OPENROUTER_API_KEY
 //
 // Optional env:
@@ -51,6 +53,7 @@ import { createWriteStream, lstatSync, mkdirSync, mkdtempSync, readFileSync, ren
 import { tmpdir } from "node:os";
 import { dirname, extname, isAbsolute, join, relative, resolve } from "node:path";
 import { summarizeStreamLine } from "./stream-summary.mjs";
+import { geminiEnvironment } from "./gemini-config.mjs";
 import { agentEnvironment, reportDirectory } from "./security-boundaries.mjs";
 
 const env = process.env;
@@ -115,6 +118,12 @@ Do not run git commit, git push, or create branches or pull requests; that is ha
 
 // Each agent: binary, required key, and argv (no shell, so the prompt is never shell-parsed).
 const AGENT_DEFS = {
+  gemini: {
+    bin: "gemini",
+    key: "GEMINI_API_KEY",
+    args: () => ["--prompt", PROMPT, "--model", env.GEMINI_MODEL || "gemini-4-argon",
+      "--approval-mode", "auto_edit", "--extensions", "none"],
+  },
   claude: {
     bin: "claude",
     key: "ANTHROPIC_API_KEY",
@@ -332,7 +341,10 @@ async function runAgent(agent, ctx) {
   } else {
     log(agent, `reviewing (log: ${logPath})`);
     const code = await runCli(ctx.bins[agent].cmd, [...ctx.bins[agent].prefix, ...def.args()], {
-      cwd: wt, logPath, childEnv: agentEnvironment(env, def.key, def.extraEnv?.() ?? {}),
+      cwd: wt, logPath, childEnv: agentEnvironment(env, def.key, {
+        ...(def.extraEnv?.() ?? {}),
+        ...(agent === "gemini" ? geminiEnvironment(ctx.runDir) : {}),
+      }),
       onStdoutLine: STREAM_LOGS && STREAMS.has(agent)
         // Claude Code's cost figure is an estimate at Claude's prices, so it is only shown for the claude agent.
         ? (line) => { const summary = summarizeStreamLine(line, { cost: agent === "claude" }); if (summary) log(agent, summary); }
@@ -455,6 +467,9 @@ async function main() {
       owned.push({ agent, wt: ctx.prepared[agent] });
       ready.push(agent);
       continue;
+    }
+    if (agent === "gemini" && Number(process.versions.node.split(".")[0]) < 20) {
+      throw new Error("Gemini CLI requires Node 20+");
     }
     let bin;
     try { bin = resolveBin(def.bin); } catch (err) { log(agent, `${err.message}, skipping`); continue; }

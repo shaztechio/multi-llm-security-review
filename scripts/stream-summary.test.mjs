@@ -16,7 +16,7 @@
 // Run with: node --test scripts/stream-summary.test.mjs
 import assert from "node:assert/strict";
 import test from "node:test";
-import { summarizeStreamLine } from "./stream-summary.mjs";
+import { summarizeStreamLine, summarizeGeminiStreamLine } from "./stream-summary.mjs";
 
 const line = (event) => JSON.stringify(event);
 
@@ -90,4 +90,39 @@ test("long targets are cut and non-JSON is ignored", () => {
   assert.equal(summarizeStreamLine("Warning: something on stdout"), null);
   assert.equal(summarizeStreamLine("42"), null);
   assert.equal(summarizeStreamLine("null"), null);
+});
+
+test("Gemini streams session, tool paths and final metadata", () => {
+  assert.equal(summarizeGeminiStreamLine(line({ type: "init", model: "gemini-4-argon" })),
+    "session started (model gemini-4-argon)");
+  assert.equal(summarizeGeminiStreamLine(line({ type: "tool_use", tool_name: "read_file",
+    parameters: { file_path: "src/auth.cs", content: "SECRET" } })), "read_file src/auth.cs");
+  assert.equal(summarizeGeminiStreamLine(line({ type: "tool_use", tool_name: "list_directory",
+    parameters: { dir_path: "src" } })), "list_directory src");
+  assert.equal(summarizeGeminiStreamLine(line({ type: "result", status: "success",
+    stats: { tool_calls: 12, duration_ms: 125000 } })), "finished (success), 12 tool calls, 125s");
+});
+
+test("Gemini messages, results and error details never leak into public progress", () => {
+  for (const event of [
+    { type: "message", role: "assistant", content: "SECRET FINDING" },
+    { type: "tool_result", output: "SECRET FILE", error: { message: "SECRET" } },
+    { type: "unknown", content: "SECRET" },
+  ]) assert.equal(summarizeGeminiStreamLine(line(event)), null);
+  assert.equal(summarizeGeminiStreamLine(line({ type: "error", severity: "warning", message: "SECRET" })),
+    "agent warning (details in log artifact)");
+  assert.equal(summarizeGeminiStreamLine(line({ type: "result", status: "error", error: { message: "SECRET" } })),
+    "ended with an error");
+  assert.equal(summarizeGeminiStreamLine(line({ type: "tool_use", tool_name: "replace",
+    parameters: { file_path: "src/a", old_string: "SECRET", new_string: "SECRET" } })), "replace src/a");
+});
+
+test("Gemini progress handles malformed events and sanitizes paths", () => {
+  for (const value of ["not JSON", "null", "42"]) assert.equal(summarizeGeminiStreamLine(value), null);
+  const summary = summarizeGeminiStreamLine(line({ type: "tool_use", tool_name: "read_file",
+    parameters: { file_path: "a\n::error::forged\r" + "x".repeat(1000) } }));
+  assert.ok(!/[\r\n]/.test(summary));
+  assert.ok(summary.length < 200);
+  assert.equal(summarizeGeminiStreamLine(line({ type: "result", status: "success",
+    stats: { tool_calls: "SECRET", duration_ms: "SECRET" } })), "finished (success)");
 });

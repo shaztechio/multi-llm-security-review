@@ -76,7 +76,7 @@ on:
         type: string
         default: ""
       stream-logs:
-        description: "Print one progress line per tool call (tool and path only) to the job log for the Claude Code based agents. The job log of a public repo is public."
+        description: "Print one progress line per tool call (tool and path only) to the job log for Claude, OpenRouter and Gemini. The job log of a public repo is public."
         type: boolean
         default: false
       draft:

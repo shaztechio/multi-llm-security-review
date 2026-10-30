@@ -41,8 +41,8 @@
 //   DRAFT=1                        open PRs as drafts (0 to disable)
 //   PR_TITLE_PREFIX="fix(security)"  Conventional Commit type/scope for PR titles and commits
 //   AGENT_TIMEOUT_MIN=60           kill an agent that runs longer than this
-//   STREAM_LOGS=1                  print one progress line per tool call of the Claude Code based agents
-//                                  (claude, openrouter) to the job log. Tool name and path only: never the
+//   STREAM_LOGS=1                  print one progress line per tool call of the streaming agents
+//                                  (claude, openrouter, gemini) to the job log. Tool name and path only: never the
 //                                  model's text or file contents. The full stream still goes to the agent log.
 //   SARIF_DIR=<run dir>            where each agent's findings are written as <agent>.sarif
 //                                  (never committed; the workflow uploads them to code scanning)
@@ -52,7 +52,7 @@ import { randomUUID } from "node:crypto";
 import { createWriteStream, lstatSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, extname, isAbsolute, join, relative, resolve } from "node:path";
-import { summarizeStreamLine } from "./stream-summary.mjs";
+import { summarizeStreamLine, summarizeGeminiStreamLine } from "./stream-summary.mjs";
 import { geminiEnvironment } from "./gemini-config.mjs";
 import { agentEnvironment, reportDirectory } from "./security-boundaries.mjs";
 
@@ -64,9 +64,8 @@ const DRAFT = (env.DRAFT ?? "1") === "1";
 const TITLE_PREFIX = env.PR_TITLE_PREFIX ?? "fix(security)"; // repos that squash-merge often require Conventional Commit titles
 const TIMEOUT_MS = Number(env.AGENT_TIMEOUT_MIN ?? 60) * 60_000;
 const STREAM_LOGS = (env.STREAM_LOGS ?? "0") === "1";
-// The agents that run Claude Code, which can emit stream-json. Codex runs through its action, which already
-// prints live to the job log.
-const STREAMS = new Set(["claude", "openrouter"]);
+// Agents with sanitized stream-json progress. Codex already prints live through its action.
+const STREAMS = new Set(["claude", "openrouter", "gemini"]);
 const STREAM_FLAGS = ["--output-format", "stream-json", "--verbose"];
 // The repo under review is untrusted. Claude Code would otherwise load its .claude/settings.json (hooks are
 // shell commands it runs around every tool call, outside --allowedTools/--tools) and its .mcp.json servers.
@@ -122,7 +121,8 @@ const AGENT_DEFS = {
     bin: "gemini",
     key: "GEMINI_API_KEY",
     args: () => ["--prompt", PROMPT, "--model", env.GEMINI_MODEL || "gemini-4-argon",
-      "--approval-mode", "auto_edit", "--extensions", "none", "--skip-trust"],
+      "--approval-mode", "auto_edit", "--extensions", "none", "--skip-trust",
+      ...(STREAM_LOGS ? ["--output-format", "stream-json"] : [])],
   },
   claude: {
     bin: "claude",
@@ -347,7 +347,12 @@ async function runAgent(agent, ctx) {
       }),
       onStdoutLine: STREAM_LOGS && STREAMS.has(agent)
         // Claude Code's cost figure is an estimate at Claude's prices, so it is only shown for the claude agent.
-        ? (line) => { const summary = summarizeStreamLine(line, { cost: agent === "claude" }); if (summary) log(agent, summary); }
+        ? (line) => {
+          const summary = agent === "gemini"
+            ? summarizeGeminiStreamLine(line)
+            : summarizeStreamLine(line, { cost: agent === "claude" });
+          if (summary) log(agent, summary);
+        }
         : undefined,
     });
     if (code !== 0) log(agent, `agent exited with code ${code}; see ${logPath}`);

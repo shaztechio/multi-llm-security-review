@@ -84,3 +84,32 @@ export function summarizeStreamLine(line, { cost = true } = {}) {
 
   return null;
 }
+
+// Gemini CLI uses a different JSONL schema from Claude Code. Only allow progress
+// metadata through; messages, tool output, edit contents and error text stay in the artifact.
+export function summarizeGeminiStreamLine(line) {
+  let event;
+  try { event = JSON.parse(line); } catch { return null; }
+  if (!event || typeof event !== "object") return null;
+  if (event.type === "init") {
+    return `session started (model ${clean(event.model) || "?"})`;
+  }
+  if (event.type === "tool_use") {
+    const params = event.parameters;
+    const path = params && typeof params === "object"
+      ? clean(params.file_path ?? params.dir_path ?? params.path ?? "") : "";
+    return [clean(event.tool_name) || "tool", path].filter(Boolean).join(" ");
+  }
+  if (event.type === "error") {
+    return event.severity === "warning" ? "agent warning (details in log artifact)"
+      : "agent error (details in log artifact)";
+  }
+  if (event.type === "result") {
+    const parts = [event.status === "success" ? "finished (success)" : "ended with an error"];
+    const stats = event.stats;
+    if (Number.isFinite(stats?.tool_calls)) parts.push(`${stats.tool_calls} tool calls`);
+    if (Number.isFinite(stats?.duration_ms)) parts.push(`${Math.round(stats.duration_ms / 1000)}s`);
+    return parts.join(", ");
+  }
+  return null;
+}

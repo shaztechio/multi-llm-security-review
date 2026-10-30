@@ -116,6 +116,24 @@ override it with `gemini-model` / `GEMINI_MODEL`. Set `GEMINI_API_KEY` in the ca
 secrets or your local environment. Your API account must have access to the model.
 
 Install `npm i -g @google/gemini-cli@0.66.0` for local runs (Node 20+ required).
+CI installs the security settings as root-owned `/etc/gemini-cli/security-review.json`.
+The runner verifies the settings and their permissions before passing `--skip-trust` for
+its temporary worktree. A user-owned temp file is not a valid Gemini system settings file.
+
+For local macOS/Linux runs, install the same settings once (repeat after updating this tool):
+
+```bash
+node scripts/gemini-config.mjs > /tmp/gemini-security-review.json
+sudo install -d -o root -m 0755 /etc/gemini-cli
+sudo install -o root -m 0644 /tmp/gemini-security-review.json /etc/gemini-cli/security-review.json
+```
+
+On Windows, install the output of `node scripts/gemini-config.mjs` at
+`C:\ProgramData\gemini-cli\security-review.json` using an administrator session, with
+Administrators/SYSTEM ownership and write access restricted to administrators on the file
+and its parent directories. `SECREVIEW_GEMINI_SETTINGS_PATH` can select another securely
+installed path. Missing, insecure, or outdated settings stop the run before Gemini starts.
+
 CI pins the CLI via `gemini-cli-version` (default `0.66.0`). Gemini CLI is not yet optimized
 for Argon, so this integration is experimental. It uses `--approval-mode auto_edit` with
 file reading, search and editing tools only. System settings disable hooks, MCP, extensions,

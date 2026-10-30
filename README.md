@@ -67,7 +67,7 @@ the commonly adjusted subset. Additional inputs can be set in the caller's `with
 | `openrouter-max-context-tokens` | Claude Code's 200k | The model's real context window, if you know it. Do not raise it to 1M to "use" a big window: turns get more expensive. |
 | `openrouter-auto-compact-window` | `100000` | Compact the conversation at this many tokens (100000 to 1000000). Every turn re-sends it, so smaller is cheaper. |
 | `openrouter-max-turns` | none | Stop after this many turns. Reaching it fails the run, with no PR if the report was not written yet. |
-| `stream-logs` | `false` | One progress line per tool call in the job log, for the Claude and OpenRouter agents. See [Live progress](#live-progress). |
+| `stream-logs` | `false` | One progress line per tool call in the job log, for the Claude, OpenRouter and Gemini agents. See [Live progress](#live-progress). |
 | `draft` | `true` | Open PRs as drafts. |
 | `upload-sarif` | `true` | Upload findings to code scanning. Untick on private repos without GitHub Code Security. |
 | `base-branch` | repo default | Branch to review and target. |
@@ -154,7 +154,7 @@ for Argon, so this integration is experimental. It uses `--approval-mode auto_ed
 file reading, search and editing tools only. System settings disable hooks, MCP, extensions,
 skills, subagents and local `.env` loading. Like Claude Code, it cannot run tests.
 It produces a `gemini` PR, findings report, SARIF category and log artifact through the same
-publisher as the other agents. `STREAM_LOGS` applies only to Claude and OpenRouter.
+publisher as the other agents. `STREAM_LOGS` also enables sanitized live progress for Gemini.
 
 ```bash
 AGENTS=gemini GEMINI_API_KEY=... node scripts/security-review.mjs path/to/repo
@@ -187,9 +187,11 @@ edit-only tools. The PR, branch and code scanning category are named `openrouter
 
 By default an agent's own output goes to a file (uploaded as the `security-review-<agent>-log` artifact), so the
 job log shows only `[agent] reviewingâ€¦` until the end. Tick `stream-logs` (or set `STREAM_LOGS=1` locally) to run
-Claude Code with `--output-format stream-json --verbose` and print one line per tool call for the `claude` and
-`openrouter` agents, for example `[openrouter] Read apps/dotnet/src/Core/BackupManager.cs`, plus API retries and a
-final line with turns, time and cost. Codex already prints live through its action.
+Claude Code with `--output-format stream-json --verbose`, or Gemini with `--output-format stream-json`,
+and print one line per tool call for the `claude`, `openrouter` and `gemini` agents, for example `[openrouter] Read apps/dotnet/src/Core/BackupManager.cs`, plus API retries and a
+final line with turns, time and cost for Claude. Gemini prints session start, tool names and paths,
+generic warnings/errors, and a final tool-call count and duration; error details stay in its log artifact.
+Codex already prints live through its action.
 
 - **Only the tool and the path or pattern it was pointed at are printed.** Never the model's text, its reasoning, tool
   results or file contents, so unfixed findings do not appear in a public job log as they are made. The full stream

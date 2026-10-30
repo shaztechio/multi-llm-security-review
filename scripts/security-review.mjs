@@ -53,6 +53,7 @@ import { createWriteStream, lstatSync, mkdirSync, mkdtempSync, readFileSync, ren
 import { tmpdir } from "node:os";
 import { dirname, extname, isAbsolute, join, relative, resolve } from "node:path";
 import { summarizeStreamLine, summarizeGeminiStreamLine } from "./stream-summary.mjs";
+import { runGeminiReview, geminiOutputComplete, GEMINI_COMPLETION_PROMPT } from "./gemini-recovery.mjs";
 import { geminiEnvironment } from "./gemini-config.mjs";
 import { agentEnvironment, reportDirectory } from "./security-boundaries.mjs";
 
@@ -224,9 +225,9 @@ function resolveBin(bin) {
 }
 
 // Run an agent CLI, streaming stdout/stderr to a log file. Resolves with the exit code.
-function runCli(cmd, args, { cwd, logPath, childEnv = env, onStdoutLine }) {
+function runCli(cmd, args, { cwd, logPath, childEnv = env, onStdoutLine, timeoutMs = TIMEOUT_MS, append = false }) {
   return new Promise((resolveP) => {
-    const out = createWriteStream(logPath);
+    const out = createWriteStream(logPath, { flags: append ? "a" : "w" });
     const child = spawn(cmd, args, { cwd, env: childEnv, stdio: ["ignore", "pipe", "pipe"] });
     child.stdout.pipe(out, { end: false });
     child.stderr.pipe(out, { end: false });
@@ -244,9 +245,9 @@ function runCli(cmd, args, { cwd, logPath, childEnv = env, onStdoutLine }) {
       });
     }
     const timer = setTimeout(() => {
-      out.write(`\n[security-review] timed out after ${TIMEOUT_MS / 60_000} min, killing\n`);
+      out.write(`\n[security-review] timed out after ${timeoutMs / 60_000} min, killing\n`);
       child.kill("SIGTERM");
-    }, TIMEOUT_MS);
+    }, timeoutMs);
     child.on("error", (err) => {
       clearTimeout(timer);
       out.end(`\n[security-review] failed to start: ${err.message}\n`);
@@ -340,7 +341,7 @@ async function runAgent(agent, ctx) {
     sh("git", ["checkout", "--quiet", "-b", branch], { cwd: wt });
   } else {
     log(agent, `reviewing (log: ${logPath})`);
-    const code = await runCli(ctx.bins[agent].cmd, [...ctx.bins[agent].prefix, ...def.args()], {
+    const cliOptions = {
       cwd: wt, logPath, childEnv: agentEnvironment(env, def.key, {
         ...(def.extraEnv?.() ?? {}),
         ...(agent === "gemini" ? geminiEnvironment() : {}),
@@ -354,7 +355,24 @@ async function runAgent(agent, ctx) {
           if (summary) log(agent, summary);
         }
         : undefined,
-    });
+    };
+    const invoke = (args, options = {}) => runCli(ctx.bins[agent].cmd,
+      [...ctx.bins[agent].prefix, ...args], { ...cliOptions, ...options });
+    const code = agent === "gemini"
+      ? await runGeminiReview({
+        timeoutMs: TIMEOUT_MS,
+        complete: () => geminiOutputComplete(wt),
+        onRetry: () => log(agent, "output incomplete; resuming session once to finish report and SARIF"),
+        run: ({ resume, timeoutMs }) => {
+          const args = def.args();
+          if (resume) {
+            args[args.indexOf("--prompt") + 1] = GEMINI_COMPLETION_PROMPT;
+            args.push("--resume", "latest");
+          }
+          return invoke(args, { timeoutMs, append: resume });
+        },
+      })
+      : await invoke(def.args());
     if (code !== 0) log(agent, `agent exited with code ${code}; see ${logPath}`);
   }
 

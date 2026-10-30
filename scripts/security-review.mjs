@@ -122,7 +122,7 @@ const AGENT_DEFS = {
     bin: "gemini",
     key: "GEMINI_API_KEY",
     args: () => ["--prompt", PROMPT, "--model", env.GEMINI_MODEL || "gemini-4-argon",
-      "--approval-mode", "auto_edit", "--extensions", "none"],
+      "--approval-mode", "auto_edit", "--extensions", "none", "--skip-trust"],
   },
   claude: {
     bin: "claude",
@@ -343,7 +343,7 @@ async function runAgent(agent, ctx) {
     const code = await runCli(ctx.bins[agent].cmd, [...ctx.bins[agent].prefix, ...def.args()], {
       cwd: wt, logPath, childEnv: agentEnvironment(env, def.key, {
         ...(def.extraEnv?.() ?? {}),
-        ...(agent === "gemini" ? geminiEnvironment(ctx.runDir) : {}),
+        ...(agent === "gemini" ? geminiEnvironment() : {}),
       }),
       onStdoutLine: STREAM_LOGS && STREAMS.has(agent)
         // Claude Code's cost figure is an estimate at Claude's prices, so it is only shown for the claude agent.

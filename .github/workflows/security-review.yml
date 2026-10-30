@@ -225,6 +225,13 @@ jobs:
             codex)  ;; # installed by openai/codex-action
           esac
 
+      - name: Install Gemini security settings
+        if: ${{ matrix.agent == 'gemini' }}
+        run: |
+          node .security-review-tool/scripts/gemini-config.mjs > "$RUNNER_TEMP/gemini-security-review.json"
+          sudo install -d -o root -g root -m 0755 /etc/gemini-cli
+          sudo install -o root -g root -m 0644 "$RUNNER_TEMP/gemini-security-review.json" /etc/gemini-cli/security-review.json
+
       # Codex runs through openai/codex-action instead of the CLI: the action sets up the
       # runner's user-namespace sandbox and drops sudo before running Codex, and keeps the
       # API key out of Codex's environment. It reviews a detached worktree of the base branch;

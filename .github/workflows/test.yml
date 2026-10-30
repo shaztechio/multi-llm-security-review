@@ -1,0 +1,26 @@
+# Copyright 2026 Shazron Abdullah
+# SPDX-License-Identifier: Apache-2.0
+name: Tests
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  gemini-settings:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: node --test scripts/*.test.mjs
+      - name: Validate system settings with pinned Gemini CLI
+        run: |
+          npm install --prefix "$RUNNER_TEMP/gemini-check" --ignore-scripts --no-audit --no-fund @google/gemini-cli@0.66.0
+          node scripts/gemini-config.mjs > "$RUNNER_TEMP/gemini-settings.json"
+          sudo install -d -o root -g root -m 0755 /etc/gemini-cli
+          sudo install -o root -g root -m 0644 "$RUNNER_TEMP/gemini-settings.json" /etc/gemini-cli/security-review.json
+          node scripts/gemini-config.integration.mjs "$RUNNER_TEMP/gemini-check/node_modules/@google/gemini-cli/bundle"

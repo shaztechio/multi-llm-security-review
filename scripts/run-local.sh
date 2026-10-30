@@ -36,6 +36,7 @@ Environment:
   ANTHROPIC_API_KEY     needed for agent "claude"
   OPENROUTER_API_KEY    needed for agent "openrouter"
   OPENAI_API_KEY        needed for agent "codex"
+  GEMINI_API_KEY        needed for agent "gemini" (Gemini CLI needs Node 20+)
   AGENTS                space-separated agents (default: "claude openrouter")
   OPENROUTER_MAX_TURNS  turn cap for openrouter (default: 60)
   SECREVIEW_ENV_FILE    use this env file instead of <repo>/.env
@@ -87,6 +88,7 @@ for a in $AGENTS; do
   case "$a" in
     claude)     [[ -n "${ANTHROPIC_API_KEY:-}"  ]] || { echo "ANTHROPIC_API_KEY not set" >&2; exit 1; } ;;
     openrouter) [[ -n "${OPENROUTER_API_KEY:-}" ]] || { echo "OPENROUTER_API_KEY not set" >&2; exit 1; } ;;
+    gemini)     [[ -n "${GEMINI_API_KEY:-}"     ]] || { echo "GEMINI_API_KEY not set" >&2; exit 1; } ;;
     codex)      [[ -n "${OPENAI_API_KEY:-}"     ]] || { echo "OPENAI_API_KEY not set" >&2; exit 1; } ;;
   esac
 done

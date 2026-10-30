@@ -23,7 +23,7 @@ import { agentEnvironment, reportDirectory } from "./security-boundaries.mjs";
 const parent = {
   PATH: "runtime", GH_TOKEN: "publisher", github_token: "publisher", ACTIONS_RUNTIME_TOKEN: "artifact",
   ANTHROPIC_API_KEY: "claude", ANTHROPIC_AUTH_TOKEN: "claude-auth",
-  OPENAI_API_KEY: "openai", CODEX_API_KEY: "openai-codex", OPENROUTER_API_KEY: "router", GOOGLE_API_KEY: "google",
+  OPENAI_API_KEY: "openai", CODEX_API_KEY: "openai-codex", OPENROUTER_API_KEY: "router", GEMINI_API_KEY: "gemini", GOOGLE_API_KEY: "google",
 };
 
 test("each agent keeps only its own provider credentials", () => {
@@ -31,6 +31,8 @@ test("each agent keeps only its own provider credentials", () => {
     { PATH: "runtime", ANTHROPIC_API_KEY: "claude", ANTHROPIC_AUTH_TOKEN: "claude-auth" });
   assert.deepEqual(agentEnvironment(parent, "OPENAI_API_KEY"),
     { PATH: "runtime", OPENAI_API_KEY: "openai", CODEX_API_KEY: "openai-codex" });
+  assert.deepEqual(agentEnvironment(parent, "GEMINI_API_KEY"),
+    { PATH: "runtime", GEMINI_API_KEY: "gemini", GOOGLE_API_KEY: "google" });
   // The openrouter agent's extra env replaces Claude's variables, and nothing of Claude's leaks in first.
   assert.deepEqual(
     agentEnvironment(parent, "OPENROUTER_API_KEY", { ANTHROPIC_API_KEY: "", ANTHROPIC_AUTH_TOKEN: "router" }),
@@ -38,7 +40,7 @@ test("each agent keeps only its own provider credentials", () => {
 });
 
 test("publisher tokens are removed whatever their case, and the parent is not modified", () => {
-  for (const key of ["ANTHROPIC_API_KEY", "OPENAI_API_KEY", "OPENROUTER_API_KEY"]) {
+  for (const key of ["ANTHROPIC_API_KEY", "OPENAI_API_KEY", "OPENROUTER_API_KEY", "GEMINI_API_KEY"]) {
     const child = agentEnvironment(parent, key);
     assert.equal(Object.keys(child).some((n) => /^(gh_token|github_token|actions_runtime_token)$/i.test(n)), false);
   }

@@ -10,7 +10,7 @@ The same script also runs locally, so CI and local runs behave identically.
 | Path | What it is |
 |---|---|
 | `.github/workflows/security-review.yml` | The reusable workflow (`workflow_call`). One matrix job per selected provider. |
-| `examples/caller.yml` | Basic "Run workflow" form: four provider checkboxes and draft PRs. |
+| `examples/caller.yml` | Basic "Run workflow" form: four provider checkboxes, stream logs, and draft PRs. |
 | `examples/caller-advanced.yml` | Optional advanced form with model overrides, OpenRouter tuning, live logs, and SARIF controls. |
 | `scripts/security-review.mjs` | The tool. Node 18+, no dependencies. The workflow fetches it from this repo. |
 | `.github/workflows/no-secrets.yml` | Guard that fails if this repo can see any provider API key. |
@@ -41,10 +41,10 @@ The calling repo must also allow Actions to open PRs: Settings â†’ Actions 
 tick **Allow GitHub Actions to create and approve pull requests**. Without it `gh pr create` fails. If the box
 is greyed out, an organisation policy is blocking it; enable it under the org's Actions settings first.
 
-The basic form has exactly five options: the four providers and **Open PRs as drafts**.
+The basic form has six options: the four providers, **Stream logs**, and **Open PRs as drafts**.
 It uses CLI-default Claude/Codex models, Gemini Argon, and `z-ai/glm-5.3:floor` for
 OpenRouter, with SARIF uploads enabled. Choose **Security review (advanced)** for model
-overrides, OpenRouter turn/compaction limits, live progress logs, or to disable SARIF
+overrides, OpenRouter turn/compaction limits, or to disable SARIF
 on a private repo without GitHub Code Security. Both examples explicitly forward only
 the four provider secrets and pin the reusable workflow and tool checkout to the same
 release commit. Keep both copies' pins and defaults in step when upgrading.

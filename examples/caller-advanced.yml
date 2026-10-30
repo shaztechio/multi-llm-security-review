@@ -14,7 +14,7 @@
 # limitations under the License.
 
 # Copy to .github/workflows/security-review-advanced.yml in the repo to review.
-# Use caller.yml for the five-option form; this form exposes model and tuning controls.
+# Use caller.yml for the basic form; this form exposes model and tuning controls.
 # Needs repo secrets ANTHROPIC_API_KEY / OPENAI_API_KEY / GEMINI_API_KEY / OPENROUTER_API_KEY (only for the
 # providers you use) and Settings → Actions → General →
 # "Allow GitHub Actions to create and approve pull requests".

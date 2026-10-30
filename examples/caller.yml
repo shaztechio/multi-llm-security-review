@@ -40,6 +40,10 @@ on:
         description: "OpenRouter (experimental)"
         type: boolean
         default: false
+      stream-logs:
+        description: "Stream tool activity to the job log (public in public repos)"
+        type: boolean
+        default: false
       draft:
         description: "Open PRs as drafts"
         type: boolean
@@ -62,7 +66,7 @@ jobs:
       openrouter-model: "z-ai/glm-5.3:floor"
       openrouter-max-turns: ""
       openrouter-auto-compact-window: ""
-      stream-logs: false
+      stream-logs: ${{ inputs.stream-logs }}
       claude-model: ""
       codex-model: ""
       draft: ${{ inputs.draft }}

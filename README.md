@@ -10,7 +10,8 @@ The same script also runs locally, so CI and local runs behave identically.
 | Path | What it is |
 |---|---|
 | `.github/workflows/security-review.yml` | The reusable workflow (`workflow_call`). One matrix job per selected provider. |
-| `examples/caller.yml` | Copy into a repo to get a "Run workflow" button with provider checkboxes. |
+| `examples/caller.yml` | Basic "Run workflow" form: four provider checkboxes and draft PRs. |
+| `examples/caller-advanced.yml` | Optional advanced form with model overrides, OpenRouter tuning, live logs, and SARIF controls. |
 | `scripts/security-review.mjs` | The tool. Node 18+, no dependencies. The workflow fetches it from this repo. |
 | `.github/workflows/no-secrets.yml` | Guard that fails if this repo can see any provider API key. |
 | `extras/` | Earlier bash script and single-repo workflow. Superseded, kept for reference only. |
@@ -19,7 +20,8 @@ The same script also runs locally, so CI and local runs behave identically.
 ## Use it from another repo
 
 1. Copy [`examples/caller.yml`](examples/caller.yml) to `.github/workflows/security-review.yml` in the repo
-   you want reviewed.
+   you want reviewed. Optionally copy [`examples/caller-advanced.yml`](examples/caller-advanced.yml)
+   to `.github/workflows/security-review-advanced.yml` alongside it.
 2. In that repo, add a secret for each provider you'll use (see [API keys](#api-keys)).
 3. In that repo, enable Settings â†’ Actions â†’ General â†’ **Allow GitHub Actions to create and approve pull requests**.
 4. Actions tab â†’ **Security review** â†’ **Run workflow**, tick the providers, run.
@@ -30,7 +32,8 @@ findings are also uploaded to code scanning (see [Code scanning](#code-scanning)
 
 The workflow runs on demand only (`workflow_dispatch`). The caller grants `contents: write` and
 `pull-requests: write`, plus `security-events: write` and `actions: read` for the code scanning upload.
-If you copied an older `caller.yml`, add those two permissions and the `upload-sarif` input. The workflow
+If you copied an older `caller.yml`, add those two permissions; the basic example
+always enables SARIF, while the advanced example exposes `upload-sarif`. The workflow
 declares exactly these permissions per job, and a reusable workflow can't request more than its caller
 grants, so a caller without them now fails to start rather than failing at the SARIF upload.
 
@@ -38,7 +41,18 @@ The calling repo must also allow Actions to open PRs: Settings â†’ Actions 
 tick **Allow GitHub Actions to create and approve pull requests**. Without it `gh pr create` fails. If the box
 is greyed out, an organisation policy is blocking it; enable it under the org's Actions settings first.
 
+The basic form has exactly five options: the four providers and **Open PRs as drafts**.
+It uses CLI-default Claude/Codex models, Gemini Argon, and `z-ai/glm-5.3:floor` for
+OpenRouter, with SARIF uploads enabled. Choose **Security review (advanced)** for model
+overrides, OpenRouter turn/compaction limits, live progress logs, or to disable SARIF
+on a private repo without GitHub Code Security. Both examples explicitly forward only
+the four provider secrets and pin the reusable workflow and tool checkout to the same
+release commit. Keep both copies' pins and defaults in step when upgrading.
+
 ### Inputs
+
+The following inputs belong to the reusable workflow; the advanced example exposes
+the commonly adjusted subset. Additional inputs can be set in the caller's `with:` block.
 
 | Input | Default | Notes |
 |---|---|---|
@@ -68,7 +82,7 @@ To pin a release, set both `uses: shaztechio/multi-llm-security-review/.github/w
 ## API keys
 
 Set `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GEMINI_API_KEY` and/or `OPENROUTER_API_KEY` as secrets **in each calling repo**
-(only for the providers you tick). They reach the workflow through `secrets: inherit`.
+(only for the providers you tick). The examples pass these four secrets explicitly to the reusable workflow.
 
 Never add them to this repo:
 
@@ -88,7 +102,7 @@ repo's **Security â†’ Code scanning** page, one category per agent (`securi
 attached to the reviewed branch and commit.
 
 - Alerts are visible only to people with write or security access, not the public.
-- Free on public repos. Private repos need a GitHub Code Security license; without one, untick
+- Free on public repos. Private repos need a GitHub Code Security license; without one, use the advanced form and untick
   `upload-sarif` or the upload step fails.
 - The SARIF is never committed to the PR.
 - Alerts close when a later run of the same agent no longer reports them, so run again after merging fixes.

@@ -13,8 +13,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# Copy to .github/workflows/security-review.yml in any repo you want reviewed.
-# Needs repo secrets ANTHROPIC_API_KEY / OPENAI_API_KEY / OPENROUTER_API_KEY (only for the
+# Copy to .github/workflows/security-review.yml in the repo to review.
+# Optional: also copy caller-advanced.yml for model and tuning overrides.
+# Needs repo secrets ANTHROPIC_API_KEY / OPENAI_API_KEY / GEMINI_API_KEY / OPENROUTER_API_KEY (only for the
 # providers you use) and Settings → Actions → General →
 # "Allow GitHub Actions to create and approve pull requests".
 
@@ -32,23 +33,15 @@ on:
         type: boolean
         default: true
       gemini:
-        description: "Google (Gemini Argon, experimental)"
+        description: "Gemini Argon (experimental)"
         type: boolean
         default: false
       openrouter:
         description: "OpenRouter (experimental)"
         type: boolean
         default: false
-      openrouter-model:
-        description: "OpenRouter model slug, e.g. vendor/model"
-        type: string
-        default: "z-ai/glm-5.3"
       draft:
         description: "Open PRs as drafts"
-        type: boolean
-        default: true
-      upload-sarif:
-        description: "Upload findings to code scanning (Security tab)"
         type: boolean
         default: true
 
@@ -59,18 +52,24 @@ jobs:
       pull-requests: write
       security-events: write # code scanning upload
       actions: read          # needed by the SARIF upload on private repos
-    uses: shaztechio/multi-llm-security-review/.github/workflows/security-review.yml@main
+    uses: shaztechio/multi-llm-security-review/.github/workflows/security-review.yml@a990df3e4ce35ef102fde5bc6d6e74727ac241d3 # 1.1.1, pinned by commit; bump deliberately after reviewing the tool repo
     with:
       anthropic: ${{ inputs.anthropic }}
       openai: ${{ inputs.openai }}
       gemini: ${{ inputs.gemini }}
-      # gemini-model: gemini-4-argon
-      # gemini-cli-version: 0.66.0
+      gemini-model: "gemini-4-argon"
       openrouter: ${{ inputs.openrouter }}
-      openrouter-model: ${{ inputs.openrouter-model }}
+      openrouter-model: "z-ai/glm-5.3:floor"
+      openrouter-max-turns: ""
+      openrouter-auto-compact-window: ""
+      stream-logs: false
+      claude-model: ""
+      codex-model: ""
       draft: ${{ inputs.draft }}
-      upload-sarif: ${{ inputs.upload-sarif }}
-      # claude-model: claude-sonnet-4-6
-      # claude-cli-version: 2.1.260   # exact version; bump deliberately
-      # tool-ref: main   # keep in step with the @ref on the uses: line
-    secrets: inherit
+      upload-sarif: true
+      tool-ref: a990df3e4ce35ef102fde5bc6d6e74727ac241d3 # 1.1.1; keep in step with the @ref on the uses: line
+    secrets: # only what the review needs, not every secret in the repo
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}

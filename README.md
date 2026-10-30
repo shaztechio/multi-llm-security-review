@@ -154,7 +154,10 @@ for Argon, so this integration is experimental. It uses `--approval-mode auto_ed
 file reading, search and editing tools only. System settings disable hooks, MCP, extensions,
 skills, subagents and local `.env` loading. Like Claude Code, it cannot run tests.
 It produces a `gemini` PR, findings report, SARIF category and log artifact through the same
-publisher as the other agents. `STREAM_LOGS` also enables sanitized live progress for Gemini.
+publisher as the other agents. `STREAM_LOGS` also enables sanitized live progress for Gemini. If Gemini exits successfully
+without a complete findings report and SARIF, the tool resumes that session once to finish the
+files, using only the time remaining in the original agent timeout. Both attempts stay in the
+same log artifact. Incomplete output after that continuation still fails the review.
 
 ```bash
 AGENTS=gemini GEMINI_API_KEY=... node scripts/security-review.mjs path/to/repo
